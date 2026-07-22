@@ -1,0 +1,26 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "最小权限集 — 对话 + 文件 + 歌词窗口 + 事件通信",
+  "windows": ["main", "lyrics"],
+  "permissions": [
+    "dialog:allow-open",
+    "fs:allow-read",
+    "fs:allow-copy-file",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-resizable",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-focus",
+    "core:event:allow-emit",
+    "core:event:allow-listen"
+  ],
+  "scope": {
+    "fs": {
+      "read": ["$APPDATA/music-app/**"],
+      "copy-file": ["$APPDATA/music-app/**"]
+    }
+  }
+}

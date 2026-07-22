@@ -1,0 +1,224 @@
+/* Phase 1: Tailwind v4 — CSS-first config */
+@import "tailwindcss";
+
+/* Tailwind dark: variant —— 匹配 data-theme 属性，而不是 prefers-color-scheme */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="ocean"], [data-theme="rose"], [data-theme="amber"], [data-theme="night"], [data-theme="synthwave"], [data-theme="coffee"], [data-theme="autumn"], [data-theme="sunset"], [data-theme="business"], [data-theme="emerald"], [data-theme="dark"] *));
+
+/* ── Custom theme tokens (registered for Tailwind utility classes) ── */
+@theme {
+  --color-app-bg:      var(--bg);
+  --color-app-card:    var(--card);
+  --color-app-accent:  var(--accent);
+  --color-app-text:    var(--text);
+  --color-app-muted:   var(--muted);
+  --color-app-border:  var(--border);
+  --radius-app:        var(--radius);
+}
+
+/* ════════════════════════════════════════
+   主题系统 | 5 套精心配色的主题
+   每个主题通过 data-theme="{name}" 切换
+   ════════════════════════════════════════ */
+
+/* ── 1. 暗夜 Dark（默认）──── 深邃蓝黑色系 ── */
+:root,
+[data-theme="dark"] {
+  --bg:      #0f172a;
+  --card:    #1e293b;
+  --accent:  #3b82f6;
+  --accent2: #60a5fa;
+  --text:    #e2e8f0;
+  --muted:   #94a3b8;
+  --border:  #334155;
+  --hover:   #1e3a5f;
+  --radius:  8px;
+}
+
+/* ── 2. 皎白 Light ──── 清爽白色系 ── */
+[data-theme="light"] {
+  --bg:      #f8fafc;
+  --card:    #ffffff;
+  --accent:  #2563eb;
+  --accent2: #3b82f6;
+  --text:    #1e293b;
+  --muted:   #64748b;
+  --border:  #e2e8f0;
+  --hover:   #eff6ff;
+  --radius:  8px;
+}
+
+/* ── 3. 深海 Ocean ──── 深蓝青绿，cyan 强调 ── */
+[data-theme="ocean"] {
+  --bg:      #0a1628;
+  --card:    #0f2847;
+  --accent:  #14b8a6;
+  --accent2: #2dd4bf;
+  --text:    #ccfbf1;
+  --muted:   #5eead4;
+  --border:  #155e75;
+  --hover:   #164e63;
+  --radius:  8px;
+}
+
+/* ── 4. 玫瑰 Rose ──── 深紫红，pink 强调 ── */
+[data-theme="rose"] {
+  --bg:      #1c101d;
+  --card:    #2d1b2e;
+  --accent:  #e879f9;
+  --accent2: #f0abfc;
+  --text:    #fce7f3;
+  --muted:   #f9a8d4;
+  --border:  #4a2040;
+  --hover:   #3b1f36;
+  --radius:  8px;
+}
+
+/* ── 5. 琥珀 Amber ──── 暖深色，amber 强调 ── */
+[data-theme="amber"] {
+  --bg:      #1c160e;
+  --card:    #29221a;
+  --accent:  #f59e0b;
+  --accent2: #fbbf24;
+  --text:    #fef3c7;
+  --muted:   #fcd34d;
+  --border:  #4a3520;
+  --hover:   #3a2b1a;
+  --radius:  8px;
+}
+
+/* ── Global reset ── */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ════════════════════════════════════════
+   daisyUI 主题 (手写色值版本)
+   daisyUI 5.x 只认官方主题名,我们的自定义名用这个块手动定义
+   ════════════════════════════════════════ */
+
+/* ── 夜空 night — 深紫黑,紫丁香强调色 ── */
+[data-theme="night"] {
+  --bg:      #0f0f23;
+  --card:    #1a1a2e;
+  --accent:  #c678dd;
+  --accent2: #b48ead;
+  --text:    #e2e2f0;
+  --muted:   #6c6c8a;
+  --border:  #3b3b5c;
+  --hover:   #252540;
+  --radius:  8px;
+}
+
+/* ── 霓虹 synthwave — 赛博粉紫 ── */
+[data-theme="synthwave"] {
+  --bg:      #1a0a2e;
+  --card:    #2d1b4e;
+  --accent:  #ff71ce;
+  --accent2: #01cdfe;
+  --text:    #f5f5fa;
+  --muted:   #b967ff;
+  --border:  #6c2fb5;
+  --hover:   #3d2160;
+  --radius:  8px;
+}
+
+/* ── 咖啡 coffee — 暖棕咖啡色 ── */
+[data-theme="coffee"] {
+  --bg:      #1a1513;
+  --card:    #2d2017;
+  --accent:  #c8a27a;
+  --accent2: #d4b896;
+  --text:    #f0e6d2;
+  --muted:   #8b7355;
+  --border:  #4a3528;
+  --hover:   #3a2a1c;
+  --radius:  8px;
+}
+
+/* ── 秋枫 autumn — 橙红枫叶 ── */
+[data-theme="autumn"] {
+  --bg:      #19110a;
+  --card:    #2a1a10;
+  --accent:  #e66a35;
+  --accent2: #f59332;
+  --text:    #f5e6d3;
+  --muted:   #a06030;
+  --border:  #5c3020;
+  --hover:   #3a2010;
+  --radius:  8px;
+}
+
+/* ── 晚霞 sunset — 紫粉晚霞 ── */
+[data-theme="sunset"] {
+  --bg:      #1a1020;
+  --card:    #2d1a30;
+  --accent:  #f7797d;
+  --accent2: #c779d0;
+  --text:    #f0dde5;
+  --muted:   #a04560;
+  --border:  #6b2f45;
+  --hover:   #3d1f30;
+  --radius:  8px;
+}
+
+/* ── 商务 business — 蓝灰专业 ── */
+[data-theme="business"] {
+  --bg:      #17202a;
+  --card:    #1e2d38;
+  --accent:  #0078d4;
+  --accent2: #4ba0e3;
+  --text:    #e0e6ec;
+  --muted:   #5a7080;
+  --border:  #2f4150;
+  --hover:   #25374a;
+  --radius:  8px;
+}
+
+/* ── 柠檬 lemonade — 亮白荧光绿 ── */
+[data-theme="lemonade"] {
+  --bg:      #f3f5e8;
+  --card:    #ffffff;
+  --accent:  #b5e313;
+  --accent2: #4ea800;
+  --text:    #2a2f1a;
+  --muted:   #8faa50;
+  --border:  #d4e8a0;
+  --hover:   #e8efb0;
+  --radius:  8px;
+}
+
+/* ── 翡翠 emerald — 深绿翠玉 ── */
+[data-theme="emerald"] {
+  --bg:      #1a2419;
+  --card:    #243522;
+  --accent:  #00c853;
+  --accent2: #69f0ae;
+  --text:    #e0f0e2;
+  --muted:   #5a8a55;
+  --border:  #2f5a2d;
+  --hover:   #2a4025;
+  --radius:  8px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }

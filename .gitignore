@@ -1,0 +1,11 @@
+# 米豆音乐 — D:\workspaces\search\projects\midou-music
+# 旧代码存档 → legacy-music-app-src/（只读）
+
+/target/
+/node_modules/
+/frontend/dist/
+/frontend/node_modules/
+/src-tauri/target/
+*.exe
+*.pdb
+.DS_Store

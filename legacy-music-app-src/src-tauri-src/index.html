@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音楽自由</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar">
+    <div class="logo">音楽自由</div>
+    <nav class="source-nav">
+      <button class="source-btn active" data-source="kuwo">酷我</button>
+      <button class="source-btn" data-source="qq">QQ</button>
+      <button class="source-btn" data-source="bilibili">B站</button>
+      <button class="source-btn" data-source="kugou">酷狗</button>
+    </nav>
+    <div class="nav-bottom">
+      <button class="nav-btn" id="btn-queue">队列</button>
+      <button class="nav-btn" id="btn-fav">收藏</button>
+      <button class="nav-btn" id="btn-history">历史</button>
+      <button class="nav-btn" id="btn-local">本地</button>
+      <button class="nav-btn" id="btn-settings">设置</button>
+    </div>
+  </aside>
+  
+  <main class="main">
+    <header class="top-bar">
+      <div class="search-box">
+        <input type="text" id="search-input" placeholder="搜索歌曲、歌手...">
+        <button id="search-btn">搜索</button>
+      </div>
+      <div class="source-display">
+        <span id="current-source">酷我音乐</span>
+        <small id="source-desc">VIP歌曲免费播</small>
+      </div>
+    </header>
+    
+    <div class="content" id="content">
+      <div class="results" id="results"></div>
+    </div>
+  </main>
+  
+  <div class="player-bar" id="player-bar">
+    <div class="player-info">
+      <span id="player-title">未播放</span>
+      <span id="player-artist"></span>
+    </div>
+    <div class="player-controls">
+      <button id="btn-prev">⏮</button>
+      <button id="btn-play">▶</button>
+      <button id="btn-next">⏭</button>
+      <button id="btn-lyrics">词</button>
+    </div>
+    <div class="player-extra">
+      <button id="btn-download">⬇</button>
+      <button id="btn-fav-current">♡</button>
+    </div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
