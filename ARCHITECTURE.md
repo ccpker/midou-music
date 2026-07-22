@@ -1,46 +1,79 @@
 # 米豆音乐 — ARCHITECTURE.md
 
-> 功能地图 v0.1.1（2026-07-22）
+> 功能地图 v1.0 — 全景（2026-07-22）
 > 修改代码前必须查此地图，确认影响范围。
+> 图例：🟢 已实现 · 🟡 计划中 · ⚪ 远期预留
 
 ---
 
-## 整体架构（Mermaid）
+## 全景图（Mermaid）
 
 ```mermaid
 graph TD
-    subgraph "桌面层 Tauri v2 (官方骨架)"
-        MAIN[main.rs<br/>入口: app_lib::run()<br/>官方生成, 不动]
-        LIB[lib.rs<br/>#[tauri::command]<br/>search / play_url]
-        MW[主窗口<br/>800×600<br/>csp: null]
+    subgraph "🖥️ 桌面层"
+        MAIN[main.rs]
+        LIB[lib.rs Tauri Command 注册]
+        MW[主窗口 800x600]
+        LW[歌词窗口 独立WebView]
     end
 
-    subgraph "音源层 platform/"
-        KUWO[kuwo.rs<br/>search.kuwo.cn<br/>mobi.kuwo.cn<br/>VIP全通 零Cookie]
+    subgraph "🎵 音源层"
+        KUWO[🟢 kuwo.rs 主源 VIP全通]
+        BILI[🟡 bilibili.rs 副源]
+        KUGOU[🟡 kugou.rs 副源 扫码]
+        QQ[⚪ qq.rs 兜底]
+        LOCAL[🟡 local.rs 本地]
     end
 
-    subgraph "前端 Vue 3 (官方 Vite 模板)"
-        VAPP[App.vue<br/>搜索+列表+播放器]
-        SEARCH_BAR[SearchBar.vue<br/>emit: search]
-        SONG_LIST[SongList.vue<br/>props: songs[]<br/>emit: play]
+    subgraph "🧩 能力层"
+        LRC[🟡 lyrics.rs 歌词]
+        DL[🟡 download.rs 下载]
+        STORE[🟡 library.rs 曲库]
     end
 
-    VAPP -->|invoke('search')| LIB
-    VAPP -->|invoke('play_url')| LIB
-    LIB --> KUWO
-    KUWO -->|reqwest HTTP| KUWO
+    subgraph "🎨 前端"
+        APP[🟢 App.vue]
+        SB[🟢 SearchBar.vue]
+        SL[🟢 SongList.vue]
+        PL[🟡 PlayerBar.vue]
+        LW_V[🟡 LyricsWindow.vue]
+    end
+
+    subgraph "☁️ 外部"
+        KWCDN[酷我CDN]
+        LRCAPI[LRCLIB]
+    end
+
     MAIN --> LIB
-    MAIN -->|create_window| MW
-    MW -->|加载| VAPP
-    VAPP --> SEARCH_BAR
-    VAPP --> SONG_LIST
-```
+    LIB --> KUWO
+    LIB -.-> BILI
+    LIB -.-> KUGOU
+    LIB -.-> QQ
+    LIB -.-> LOCAL
+    LIB -.-> LRC
+    LIB -.-> DL
+    LIB -.-> STORE
 
-**没有 warp、没有 HTTP 路由、没有 8899 端口。**
+    MAIN --> MW
+    MAIN -.-> LW
+
+    MW --> APP
+    APP --> SB
+    APP --> SL
+    APP -.-> PL
+    LW -.-> LW_V
+
+    APP -->|invoke search| LIB
+    APP -->|invoke play_url| LIB
+    SL -->|invoke play_url| LIB
+
+    KUWO --> KWCDN
+    LRC --> LRCAPI
+```
 
 ---
 
-## 通信方式
+## 通信方式（唯一）
 
 ```
 前端 Vue          Tauri IPC               Rust 后端
@@ -51,129 +84,187 @@ invoke('search',  ───────────►  #[tauri::command]
 
 invoke('play_url',──────────►  #[tauri::command]
   { songId })                   fn play_url(...)
-                  ◄───────────  { url, source }
+                  ◄───────────  { url }
 
-<audio src="https://cdn..."  ← 酷我 CDN 直连，不经代理
+<audio src="https://cdn..."   ← 酷我 CDN 直连，不经代理
 ```
 
-来源：https://v2.tauri.app/develop/calling-rust/
+没有 warp、没有 HTTP 路由、没有额外端口。
 
 ---
 
-## 节点详情
+## 桌面层
 
-### main.rs
+### main.rs 🟢
 | 字段 | 值 |
 |------|-----|
 | 路径 | `src-tauri/src/main.rs` |
-| 行数 | 10 行 |
-| 规则 | 官方原话：don't modify, modify lib.rs instead |
-| 依赖 | app_lib |
+| 行数 | 10 |
+| 规则 | 官方生成，不改 |
 
-### lib.rs
+### lib.rs 🟢
 | 字段 | 值 |
 |------|-----|
-| 路径 | `src-tauri/src/lib.rs` |
-| 行数 | ~60 行（v0.1.0 仅两个 command） |
-| command | `search(keyword) → Vec<Song>` |
-| command | `play_url(song_id) → PlayUrlResult` |
-| 状态 | AppState { client: reqwest::Client } |
-| 依赖 | platform/kuwo.rs |
+| command | `search(keyword) → Vec<Song>` 🟢 |
+| command | `play_url(song_id) → PlayUrlResult` 🟢 |
+| command | `lyric(song_id) → String` 🟡 |
+| command | `download(song_id, path) → bool` 🟡 |
+| command | `scan_library() → Vec<Song>` 🟡 |
 
-### kuwo.rs
-| 字段 | 值 |
-|------|-----|
-| 路径 | `src-tauri/src/platform/kuwo.rs` |
-| 来源 | 从音楽自由旧项目迁入，代码不变 |
-| 端 | `search.kuwo.cn/r.s` — 搜索 |
-| 端点 | `mobi.kuwo.cn/mobi.s` — 播放 URL |
-| 特性 | 零登录零Cookie，VIP全通 |
-
-### App.vue
-| 字段 | 值 |
-|------|-----|
-| 路径 | `src/App.vue` |
-| 功能 | 搜索框 + 歌曲列表 + 底部 `<audio>` 播放器 |
-| 通信 | `invoke()` 调 Rust command |
-
-### SearchBar.vue
-| 字段 | 值 |
-|------|-----|
-| 路径 | `src/components/SearchBar.vue` |
-| props | 无 |
-| emits | `search(keyword)` |
-
-### SongList.vue
-| 字段 | 值 |
-|------|-----|
-| 路径 | `src/components/SongList.vue` |
-| props | `songs: Song[]` |
-| emits | `play(song)` |
+### 窗口
+| 标签 | 用途 | 状态 |
+|------|------|------|
+| `main` | 搜索 + 列表 + 播放器 | 🟢 |
+| `lyrics` | 独立歌词浮窗 | 🟡 |
 
 ---
 
-## 数据流（一次搜索→播放）
+## 音源层
 
+| 文件 | 角色 | 登录 | VIP | 状态 |
+|------|------|------|-----|------|
+| `kuwo.rs` | **主源** | 零Cookie | ✅ 全通 | 🟢 |
+| `bilibili.rs` | 副源 | 访客buvid3/4 | ✅ 音频流DASH | 🟡 |
+| `kugou.rs` | 副源 | 扫码登录 | ⚠️ 需token | 🟡 |
+| `qq.rs` | 兜底 | 暂缓 | ❌ 48% | ⚪ |
+| `local.rs` | 本地补充 | — | — | 🟡 |
+
+### kuwo.rs 🟢
+| 端点 | 地址 | 用途 |
+|------|------|------|
+| 搜索 | `search.kuwo.cn/r.s` | 关键词搜索 |
+| 播放 | `mobi.kuwo.cn/mobi.s` | 获取VIP直链 |
+| 歌词 | `mobi.kuwo.cn/mobi.s` | 内置歌词字段 |
+
+### bilibili.rs 🟡
+| 端点 | 地址 | 用途 |
+|------|------|------|
+| 搜索 | `api.bilibili.com/x/web-interface/search` | WBI签名搜索 |
+| 播放 | `api.bilibili.com/x/player/playurl` | DASH音频流 fnval=4048 |
+| 歌词 | `lrclib.net/api/get` | 回退LRCLIB |
+
+### kugou.rs 🟡
+| 步骤 | 端点 | 用途 |
+|------|------|------|
+| 设备注册 | `login.service.kugou.com` | RSA+AES 设备ID |
+| 扫码登录 | `login.user.kugou.com` | WebSocket 扫码 |
+| 搜索 | `songsearch.kugou.com` | 关键词搜索 |
+| 播放 | `trackercdn.kugou.com` | 获取URL（需token） |
+| 收藏同步 | `collect.user.kugou.com` | 拉取歌单列表 |
+
+---
+
+## 能力层
+
+| 文件 | 功能 | 输入 | 输出 | 状态 |
+|------|------|------|------|------|
+| `lyrics.rs` | 歌词获取 | song_id, artist, title | LRC 文本 | 🟡 |
+| `download.rs` | 下载管理 | song_id, path | 文件路径 | 🟡 |
+| `library.rs` | 本地曲库 | 扫描根目录 | Vec<Song> | 🟡 |
+
+**歌词回退链**: 酷我内置 → LRCLIB → 空
+
+---
+
+## 前端
+
+| 组件 | 功能 | 状态 |
+|------|------|------|
+| `App.vue` | 根组件，调 invoke | 🟢 |
+| `SearchBar.vue` | 搜索输入 emit | 🟢 |
+| `SongList.vue` | 歌曲列表 prop | 🟢 |
+| `PlayerBar.vue` | 进度条、暂停、上下首 | 🟡 |
+| `LyricsWindow.vue` | LRC滚动歌词、换源 | 🟡 |
+| `SettingsPanel.vue` | 主题、音源开关、下载路径 | 🟡 |
+
+---
+
+## 外部服务
+
+| 服务 | 用途 | 状态 |
+|------|------|------|
+| 酷我CDN | 音频直连（`<audio src=...>`） | 🟢 |
+| LRCLIB | 公开歌词 API | 🟡 已验证 |
+| B站 upos | DASH 音视频流 | 🟡 已验证 |
+
+---
+
+## 数据流
+
+### 搜索→播放（🟢 已实现）
 ```
-用户输入 "晴天"
+输入 "晴天"
   → SearchBar emit('search', '晴天')
   → App.vue invoke('search', { keyword: '晴天' })
-  → lib.rs #[tauri::command] fn search
-  → kuwo.rs::search() → reqwest GET search.kuwo.cn
-  → 解析 JSON → Vec<Song>
-  → App.vue 更新 songs[]
-  → SongList 渲染列表
+  → lib.rs → kuwo.rs::search()
+  → reqwest GET search.kuwo.cn
+  → 解析 → Vec<Song>
+  → SongList 渲染
 
-用户点击第1首
+点击第1首
   → SongList emit('play', song)
-  → App.vue invoke('play_url', { songId: '123456' })
-  → lib.rs #[tauri::command] fn play_url
-  → kuwo.rs::play_url() → reqwest GET mobi.kuwo.cn
+  → App.vue invoke('play_url', { songId })
+  → lib.rs → kuwo.rs::play_url()
   → { url: "https://..." }
-  → <audio src="https://..."  />  ← CDN直连，不经代理
+  → <audio src="https://..." />
+```
+
+### 下载（🟡 计划）
+```
+点击下载
+  → invoke('download', { songId, path })
+  → lib.rs → download.rs
+  → reqwest GET CDN URL → 流写磁盘
+  → 返回文件路径
+```
+
+### 歌词（🟡 计划）
+```
+播放歌曲
+  → invoke('lyric', { songId, artist, title })
+  → lib.rs → lyrics.rs
+  → 尝试 kuwo 内置 → 失败则 LRCLIB
+  → 返回 LRC 文本
+  → LyricsWindow 渲染滚动
 ```
 
 ---
 
-## 目录结构（对齐 Tauri 官方 project-structure）
+## 目录结构（对齐 Tauri 官方）
 
 ```
 midou-music/
-├── index.html              ← Tauri 前端入口
-├── package.json            ← 前端依赖 (vue, @tauri-apps/api)
-├── vite.config.ts          ← Vite 配置
-├── tsconfig.json           ← TypeScript 配置
-├── app-icon.png            ← 图标源 (1240×1240, 给 tauri icon 用)
-│
-├── src/                    ← Vue 前端源码
+├── src/                    Vue 前端
 │   ├── main.ts
 │   ├── App.vue
 │   ├── style.css
-│   ├── vite-env.d.ts
 │   └── components/
 │       ├── SearchBar.vue
-│       └── SongList.vue
+│       ├── SongList.vue
+│       ├── PlayerBar.vue     🟡
+│       └── LyricsWindow.vue  🟡
 │
-├── src-tauri/              ← Rust 后端
+├── src-tauri/              Rust 后端
 │   ├── Cargo.toml
-│   ├── build.rs
 │   ├── tauri.conf.json
-│   ├── capabilities/
-│   │   └── default.json
-│   ├── icons/              ← tauri icon 生成
 │   └── src/
-│       ├── main.rs         ← 官方生成，不动
-│       ├── lib.rs          ← #[tauri::command] 全部写这里
-│       └── platform/
+│       ├── main.rs
+│       ├── lib.rs
+│       └── platform/        音源适配器
 │           ├── mod.rs
-│           └── kuwo.rs
+│           ├── kuwo.rs       🟢
+│           ├── bilibili.rs  🟡
+│           ├── kugou.rs     🟡
+│           ├── qq.rs        ⚪
+│           └── local.rs     🟡
 │
-├── test-pages/             ← 独立测试页面
-├── scripts/                ← 构建辅助脚本
-├── docs/
+├── docs/                   文档
 │   ├── 编制规则_v1.md
-│   └── 研发计划.md
-└── ARCHITECTURE.md         ← 本文件
+│   ├── 研发计划.md
+│   └── 验收_v0.1.0_20260722.md
+│
+├── test-pages/             独立测试
+└── ARCHITECTURE.md         本文件
 ```
 
 ---
@@ -182,14 +273,12 @@ midou-music/
 
 | 检查项 | 状态 |
 |--------|------|
-| `cargo check` | ✅ Finished dev profile |
-| `npm run build` | ✅ 21 modules, 490ms |
-| `npx tauri icon` | ✅ 全平台图标已生成 |
-| `npx tauri dev` | ✅ 桌面窗口正常渲染 |
-| 架构对齐官方 | ✅ Tauri IPC，无 warp/无 HTTP 路由 |
-| **能听歌** | ✅ **米豆亲口确认** “能听歌。我刚才点击了” |
-
-详见 `docs/验收_v0.1.0_20260722.md`
+| `cargo check` | ✅ |
+| `npm run build` | ✅ |
+| `npx tauri icon` | ✅ |
+| `npx tauri dev` | ✅ |
+| 酷我搜索+播放 | ✅ 米豆确认能听歌 |
+| GitHub 远端 | ✅ https://github.com/ccpker/midou-music |
 
 ---
 
@@ -198,5 +287,6 @@ midou-music/
 | 日期 | 版本 | 说明 |
 |------|------|------|
 | 2026-07-22 | v0.1.0 | 初始（warp 架构） |
-| 2026-07-22 | v0.1.1 | 废弃 warp，改为 Tauri IPC 官方架构 |
-| 2026-07-22 | v0.1.2 | 米豆确认能听歌，验收通过 |
+| 2026-07-22 | v0.1.1 | 废弃 warp → Tauri IPC |
+| 2026-07-22 | v0.1.2 | 验收通过，能听歌 |
+| 2026-07-22 | v1.0 | 全景地图 — 完整功能蓝图 |
