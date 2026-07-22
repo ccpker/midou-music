@@ -178,6 +178,18 @@ midou-music/
 
 ---
 
+## 验证状态 (2026-07-22 14:28)
+
+| 检查项 | 状态 |
+|--------|------|
+| `cargo check` | ✅ Finished dev profile |
+| `npm run build` | ✅ 21 modules, 490ms |
+| `npx tauri icon` | ✅ 全平台图标已生成 |
+| 架构对齐官方 | ✅ Tauri IPC，无 warp/无 HTTP 路由 |
+| 最小功能 | ✅ 酷我搜索 + 播放 |
+
+---
+
 ## 修订记录
 
 | 日期 | 版本 | 说明 |

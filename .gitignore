@@ -1,11 +1,14 @@
-# 米豆音乐 — D:\workspaces\search\projects\midou-music
-# 旧代码存档 → legacy-music-app-src/（只读）
+# 米豆音乐 — midou-music
 
+# 构建产物
 /target/
 /node_modules/
-/frontend/dist/
-/frontend/node_modules/
+/dist/
 /src-tauri/target/
+/src-tauri/gen/
 *.exe
 *.pdb
+
+# OS
 .DS_Store
+Thumbs.db
