@@ -1,0 +1,22 @@
+:root {
+  --color-bg: #0f0f0f;
+  --color-surface: #1a1a1a;
+  --color-accent: #3b82f6;
+  --color-text: #e5e5e5;
+  --color-muted: #888;
+  --color-border: #333;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  padding-bottom: 80px; /* 给底部播放器留空间 */
+}

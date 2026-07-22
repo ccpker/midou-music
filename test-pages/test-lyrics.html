@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>米豆音乐 · 歌词窗口测试</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  background: #16a34a;
+  color: white;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  padding: 28px;
+  cursor: grab;
+  user-select: none;
+}
+body:active { cursor: grabbing; }
+h1 { font-size: 28px; margin-bottom: 18px; }
+p { margin-bottom: 14px; font-size: 16px; opacity: 0.9; }
+.btns { display: flex; gap: 10px; margin-bottom: 18px; }
+.btns button {
+  font-size: 18px;
+  padding: 10px 18px;
+  border: 2px solid white;
+  background: transparent;
+  color: white;
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.btns button:hover { background: white; color: #16a34a; }
+#log {
+  background: rgba(0,0,0,0.25);
+  padding: 10px;
+  border-radius: 6px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.step { color: #86efac; }
+.err { color: #fca5a5; }
+</style>
+</head>
+<body>
+
+<h1>🐝 米豆音乐 · 歌词测试页 🐝</h1>
+<p>👉 整个绿色区域都能拖动 · 按钮可点击 · 主题实时同步 👈</p>
+
+<div class="btns">
+  <button id="btn-min">最小化</button>
+  <button id="btn-max">最大化</button>
+  <button id="btn-close">关闭</button>
+  <button id="btn-theme">切换主题</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+const L = document.getElementById('log');
+function log(s, cls) {
+  L.innerHTML += `<div class="${cls||''}">${s}</div>`;
+  L.scrollTop = L.scrollHeight;
+}
+
+// ────── 步骤1: 诊断环境 ──────
+log('1) 诊断环境', 'step');
+log('  location.href = ' + window.location.href);
+log('  __TAURI__     = ' + typeof window.__TAURI__);
+log('  __TAURI_INTERNALS__ = ' + typeof window.__TAURI_INTERNALS__);
+
+// ────── 步骤2: 尝试获取窗口对象 ──────
+let appWindow = null;
+
+async function tryGetWindow() {
+  log('2) 尝试获取 Tauri 窗口对象', 'step');
+
+  // 方法A: __TAURI__.window (需要 withGlobalTauri)
+  if (window.__TAURI__?.window) {
+    appWindow = window.__TAURI__.window.getCurrentWindow();
+    log('  A) __TAURI__.window ✓ — label=' + appWindow.label, 'step');
+    return;
+  }
+
+  // 方法B: __TAURI__?.core?.invoke
+  if (window.__TAURI__?.core?.invoke) {
+    try {
+      appWindow = await window.__TAURI__.core.invoke('plugin:window|get_current');
+      log('  B) core.invoke ✓');
+      return;
+    } catch(e) {
+      log('  B) core.invoke ✗ — ' + e.message, 'err');
+    }
+  }
+
+  // 方法C: 动态 import @tauri-apps/api/window
+  try {
+    const mod = await import('@tauri-apps/api/window');
+    appWindow = mod.getCurrentWindow();
+    log('  C) import api/window ✓');
+    return;
+  } catch(e) {
+    log('  C) import api/window ✗ — ' + e.message, 'err');
+  }
+
+  log('  ✗✗✗ 所有方法失败 — 没有窗口对象', 'err');
+  log('  → 检查: tauri.conf.json 是否启用 withGlobalTauri?', 'err');
+  log('  → 检查: 前端是否打包了 @tauri-apps/api?', 'err');
+}
+
+// ────── 步骤3: 绑定按钮 ──────
+function bindButtons() {
+  if (!appWindow) {
+    log('3) 跳过按钮绑定 (无窗口对象)');
+    return;
+  }
+  log('3) 绑定按钮', 'step');
+  document.getElementById('btn-min').addEventListener('click', (e) => {
+    e.stopPropagation(); log('→ minimize'); appWindow.minimize();
+  });
+  document.getElementById('btn-max').addEventListener('click', (e) => {
+    e.stopPropagation(); log('→ toggleMaximize'); appWindow.toggleMaximize();
+  });
+  document.getElementById('btn-close').addEventListener('click', (e) => {
+    e.stopPropagation(); log('→ close'); appWindow.close();
+  });
+  document.getElementById('btn-theme').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const current = document.documentElement.dataset.theme;
+    const themes = ['dark', 'light', 'ocean', 'rose', 'amber'];
+    const idx = themes.indexOf(current);
+    const next = themes[(idx + 1) % themes.length];
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('midou-music-theme', next);
+    log('→ theme: ' + next);
+  });
+  log('  ✓ 4个按钮已绑定');
+}
+
+// ────── 步骤4: 全局拖动 ──────
+function bindDrag() {
+  if (!appWindow) {
+    log('4) 跳过拖动绑定 (无窗口对象)');
+    return;
+  }
+  log('4) 绑定全局拖动', 'step');
+  document.addEventListener('mousedown', (e) => {
+    if (e.target.closest('button, input, a, textarea')) return;
+    if (e.button !== 0) return;
+    appWindow.startDragging();
+  });
+  log('  ✓ 拖动已绑定 (排除按钮/输入框)');
+}
+
+// ────── 步骤5: 主题同步 (监听 localStorage) ──────
+function bindThemeSync() {
+  log('5) 绑定主题同步', 'step');
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'midou-music-theme' && e.newValue) {
+      document.documentElement.dataset.theme = e.newValue;
+      log('  ← 主题同步: ' + e.newValue);
+    }
+  });
+  const saved = localStorage.getItem('midou-music-theme');
+  if (saved) document.documentElement.dataset.theme = saved;
+  log('  ✓ 当前主题: ' + (saved || 'dark (default)'));
+}
+
+// ────── 启动 ──────
+(async () => {
+  bindThemeSync();
+  await tryGetWindow();
+  bindButtons();
+  bindDrag();
+  log('');
+  log(appWindow ? '✅ 全部就绪' : '⚠️ 部分就绪 (无Tauri API)', appWindow ? 'step' : 'err');
+})();
+</script>
+</body>
+</html>

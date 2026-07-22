@@ -1,6 +1,6 @@
 # 米豆音乐 — ARCHITECTURE.md
 
-> 功能地图 v0.1.0（2026-07-22）
+> 功能地图 v0.1.1（2026-07-22）
 > 修改代码前必须查此地图，确认影响范围。
 
 ---
@@ -9,174 +9,171 @@
 
 ```mermaid
 graph TD
-    subgraph "桌面层 Tauri v2"
-        MAIN[main.rs<br/>入口: Tauri setup<br/>输出: 窗口 + warp 服务]
-        MW[主窗口<br/>加载: /index.html<br/>尺寸: 900×700]
+    subgraph "桌面层 Tauri v2 (官方骨架)"
+        MAIN[main.rs<br/>入口: app_lib::run()<br/>官方生成, 不动]
+        LIB[lib.rs<br/>#[tauri::command]<br/>search / play_url]
+        MW[主窗口<br/>800×600<br/>csp: null]
     end
 
-    subgraph "HTTP 层 warp"
-        R[routes.rs<br/>输入: warp::Filter 链<br/>输出: JSON / 文件流]
-        API_SEARCH["GET /api/search<br/>keyword, mode, page"]
-        API_PLAY["GET /api/play<br/>source, song_id"]
-        API_DOWNLOAD["GET /api/download<br/>source, song_id"]
+    subgraph "音源层 platform/"
+        KUWO[kuwo.rs<br/>search.kuwo.cn<br/>mobi.kuwo.cn<br/>VIP全通 零Cookie]
     end
 
-    subgraph "音源层 PlatformPlugin"
-        TRAIT["trait PlatformPlugin<br/>search() / play_url() / lyric()"]
-        REG["PlatformRegistry<br/>注册: new() → HashMap"]
-        KUWO["kuwo.rs<br/>Platform: kuwo<br/>稳定: 95%<br/>VIP全通"]
+    subgraph "前端 Vue 3 (官方 Vite 模板)"
+        VAPP[App.vue<br/>搜索+列表+播放器]
+        SEARCH_BAR[SearchBar.vue<br/>emit: search]
+        SONG_LIST[SongList.vue<br/>props: songs[]<br/>emit: play]
     end
 
-    subgraph "前端 Vue 3"
-        VAPP["App.vue<br/>根组件"]
-        SEARCH_BAR["SearchBar.vue<br/>输入: 关键词<br/>emit: search"]
-        SONG_LIST["SongList.vue<br/>props: songs[]<br/>emit: play"]
-        PLAYER["PlayerBar.vue<br/>依赖: stores/player.js"]
-    end
-
-    MAIN -->|start| R
+    VAPP -->|invoke('search')| LIB
+    VAPP -->|invoke('play_url')| LIB
+    LIB --> KUWO
+    KUWO -->|reqwest HTTP| KUWO
+    MAIN --> LIB
     MAIN -->|create_window| MW
-    MW -->|fetch /index.html| R
-    R --> API_SEARCH
-    R --> API_PLAY
-    R --> API_DOWNLOAD
-    API_SEARCH --> REG
-    API_PLAY --> REG
-    REG --> KUWO
-    KUWO -.-> TRAIT
+    MW -->|加载| VAPP
     VAPP --> SEARCH_BAR
     VAPP --> SONG_LIST
-    VAPP --> PLAYER
-    SEARCH_BAR -->|fetch /api/search| API_SEARCH
-    SONG_LIST -->|fetch /api/play| API_PLAY
-    PLAYER -.->|Pinia store| SONG_LIST
 ```
+
+**没有 warp、没有 HTTP 路由、没有 8899 端口。**
+
+---
+
+## 通信方式
+
+```
+前端 Vue          Tauri IPC               Rust 后端
+─────────         ────────                ─────────
+invoke('search',  ───────────►  #[tauri::command]
+  { keyword })                  fn search(...)
+                  ◄───────────  Vec<Song>
+
+invoke('play_url',──────────►  #[tauri::command]
+  { songId })                   fn play_url(...)
+                  ◄───────────  { url, source }
+
+<audio src="https://cdn..."  ← 酷我 CDN 直连，不经代理
+```
+
+来源：https://v2.tauri.app/develop/calling-rust/
 
 ---
 
 ## 节点详情
 
-### 1. main.rs
+### main.rs
 | 字段 | 值 |
 |------|-----|
 | 路径 | `src-tauri/src/main.rs` |
-| 输入 | 无（程序入口） |
-| 输出 | Tauri App（窗口 + warp 服务） |
-| 依赖 | routes.rs, platform/*, tauri, warp |
-| 测试 | 无（集成测试：cargo run） |
-| 注 | **≤200行**，不含业务逻辑 |
+| 行数 | 10 行 |
+| 规则 | 官方原话：don't modify, modify lib.rs instead |
+| 依赖 | app_lib |
 
-### 2. routes.rs
+### lib.rs
 | 字段 | 值 |
 |------|-----|
-| 路径 | `src-tauri/src/routes.rs` |
-| 输入 | Client, PlatformRegistry, AppConfig |
-| 输出 | warp::Filter 链 |
-| 依赖 | platform/*, lyrics.rs, download.rs |
-| 测试 | `cargo test routes` |
-| 注 | **≤300行**，每个路由 ≤30 行 |
+| 路径 | `src-tauri/src/lib.rs` |
+| 行数 | ~60 行（v0.1.0 仅两个 command） |
+| command | `search(keyword) → Vec<Song>` |
+| command | `play_url(song_id) → PlayUrlResult` |
+| 状态 | AppState { client: reqwest::Client } |
+| 依赖 | platform/kuwo.rs |
 
-### 3. PlatformPlugin trait
-| 字段 | 值 |
-|------|-----|
-| 路径 | `src-tauri/src/platform/mod.rs` |
-| 接口 | `search(kw,page) → Vec<Song>` `play_url(id) → String` `lyric(id) → String` |
-| 实现 | kuwo.rs, kugou.rs, bilibili.rs（渐进迁入） |
-| 注 | 新增音源 = 新增 impl PlatformPlugin + 注册到 Registry |
-
-### 4. kuwo.rs
+### kuwo.rs
 | 字段 | 值 |
 |------|-----|
 | 路径 | `src-tauri/src/platform/kuwo.rs` |
-| 状态 | ✅ 直接迁入，不重写 |
-| 接口 | `impl PlatformPlugin` |
-| 端点 | mobi.kuwo.cn 车载API |
-| 注 | 零Cookie零登录，VIP全通 |
+| 来源 | 从音楽自由旧项目迁入，代码不变 |
+| 端 | `search.kuwo.cn/r.s` — 搜索 |
+| 端点 | `mobi.kuwo.cn/mobi.s` — 播放 URL |
+| 特性 | 零登录零Cookie，VIP全通 |
 
-### 5. SearchBar.vue
+### App.vue
 | 字段 | 值 |
 |------|-----|
-| 路径 | `frontend/src/components/SearchBar.vue` |
+| 路径 | `src/App.vue` |
+| 功能 | 搜索框 + 歌曲列表 + 底部 `<audio>` 播放器 |
+| 通信 | `invoke()` 调 Rust command |
+
+### SearchBar.vue
+| 字段 | 值 |
+|------|-----|
+| 路径 | `src/components/SearchBar.vue` |
 | props | 无 |
-| emits | `search(keyword, mode)` |
-| 依赖 | 无 |
-| 注 | mode 默认 "kuwo" |
+| emits | `search(keyword)` |
 
-### 6. SongList.vue
+### SongList.vue
 | 字段 | 值 |
 |------|-----|
-| 路径 | `frontend/src/components/SongList.vue` |
+| 路径 | `src/components/SongList.vue` |
 | props | `songs: Song[]` |
-| emits | `play(song)`, `download(song)` |
-| 依赖 | 无 |
-| 注 | Song 类型：{song_id, name, singer, album, duration, cover_url, source} |
-
-### 7. PlayerBar.vue
-| 字段 | 值 |
-|------|-----|
-| 路径 | `frontend/src/components/PlayerBar.vue` |
-| props | 无 |
-| state | Pinia: stores/player.js |
-| 依赖 | `<audio>` 原生标签 |
-| 注 | 当前播放歌曲、进度、播放/暂停 |
+| emits | `play(song)` |
 
 ---
 
-## API 契约
-
-### GET /api/search
-```
-请求: ?keyword=晴天&mode=kuwo&page=0
-响应: {
-  "songs": [{
-    "song_id": "123456",
-    "name": "晴天",
-    "singer": "周杰伦",
-    "album": "叶惠美",
-    "duration": 269,
-    "cover_url": "https://...",
-    "source": "kuwo"
-  }],
-  "total": 42
-}
-```
-
-### GET /api/play
-```
-请求: ?source=kuwo&song_id=123456
-响应: {
-  "url": "https://.../xxx.mp3",
-  "source": "kuwo"
-}
-```
-
-### GET /api/download
-```
-请求: ?source=kuwo&song_id=123456
-响应: 二进制文件流
-  Content-Disposition: attachment; filename="周杰伦-晴天.mp3"
-```
-
----
-
-## 数据流（一次搜索→播放的完整路径）
+## 数据流（一次搜索→播放）
 
 ```
 用户输入 "晴天"
-  → SearchBar emit('search', '晴天', 'kuwo')
-  → App.vue fetch GET /api/search?keyword=晴天&mode=kuwo&page=0
-  → routes.rs → platform/kuwo.rs::search("晴天", 0)
-  → kuwo.rs HTTP GET mobi.kuwo.cn → 解析JSON → Vec<Song>
-  → routes.rs 返回 JSON
+  → SearchBar emit('search', '晴天')
+  → App.vue invoke('search', { keyword: '晴天' })
+  → lib.rs #[tauri::command] fn search
+  → kuwo.rs::search() → reqwest GET search.kuwo.cn
+  → 解析 JSON → Vec<Song>
   → App.vue 更新 songs[]
   → SongList 渲染列表
+
 用户点击第1首
   → SongList emit('play', song)
-  → App.vue fetch GET /api/play?source=kuwo&song_id=123456
-  → routes.rs → kuwo.rs::play_url("123456")
-  → 返回 { url: "https://..." }
-  → store/player.js 设置 currentSong + audio.src
-  → PlayerBar.vue 开始播放
+  → App.vue invoke('play_url', { songId: '123456' })
+  → lib.rs #[tauri::command] fn play_url
+  → kuwo.rs::play_url() → reqwest GET mobi.kuwo.cn
+  → { url: "https://..." }
+  → <audio src="https://..."  />  ← CDN直连，不经代理
+```
+
+---
+
+## 目录结构（对齐 Tauri 官方 project-structure）
+
+```
+midou-music/
+├── index.html              ← Tauri 前端入口
+├── package.json            ← 前端依赖 (vue, @tauri-apps/api)
+├── vite.config.ts          ← Vite 配置
+├── tsconfig.json           ← TypeScript 配置
+├── app-icon.png            ← 图标源 (1240×1240, 给 tauri icon 用)
+│
+├── src/                    ← Vue 前端源码
+│   ├── main.ts
+│   ├── App.vue
+│   ├── style.css
+│   ├── vite-env.d.ts
+│   └── components/
+│       ├── SearchBar.vue
+│       └── SongList.vue
+│
+├── src-tauri/              ← Rust 后端
+│   ├── Cargo.toml
+│   ├── build.rs
+│   ├── tauri.conf.json
+│   ├── capabilities/
+│   │   └── default.json
+│   ├── icons/              ← tauri icon 生成
+│   └── src/
+│       ├── main.rs         ← 官方生成，不动
+│       ├── lib.rs          ← #[tauri::command] 全部写这里
+│       └── platform/
+│           ├── mod.rs
+│           └── kuwo.rs
+│
+├── test-pages/             ← 独立测试页面
+├── scripts/                ← 构建辅助脚本
+├── docs/
+│   ├── 编制规则_v1.md
+│   └── 研发计划.md
+└── ARCHITECTURE.md         ← 本文件
 ```
 
 ---
@@ -185,4 +182,5 @@ graph TD
 
 | 日期 | 版本 | 说明 |
 |------|------|------|
-| 2026-07-22 | v0.1.0 | 初始地图，v0.1.0 仅酷我单源 |
+| 2026-07-22 | v0.1.0 | 初始（warp 架构） |
+| 2026-07-22 | v0.1.1 | 废弃 warp，改为 Tauri IPC 官方架构 |
