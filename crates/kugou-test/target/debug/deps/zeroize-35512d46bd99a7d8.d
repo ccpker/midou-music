@@ -1,0 +1,11 @@
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\zeroize-35512d46bd99a7d8.d: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\x86.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\barrier.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\stack.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\../README.md
+
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\libzeroize-35512d46bd99a7d8.rlib: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\x86.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\barrier.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\stack.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\../README.md
+
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\libzeroize-35512d46bd99a7d8.rmeta: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\x86.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\barrier.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\stack.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\../README.md
+
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\lib.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\x86.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\barrier.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\stack.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\zeroize-1.9.0\src\../README.md:

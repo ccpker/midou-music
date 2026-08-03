@@ -1,0 +1,46 @@
+[package]
+name = "midou-music"
+version = "2.0.0"
+edition = "2021"
+default-run = "midou-music"
+description = "米豆音乐 - 聚合音乐播放器"
+authors = ["米豆"]
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+tokio = { version = "1", features = ["full"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+dirs = "5"
+log = "0.4"
+md5 = "0.7"
+
+# 音频播放
+rodio = { version = "0.20", default-features = false, features = ["mp3"] }
+
+# 酷狗加密套件
+aes = "0.8"
+cbc = "0.1"
+rsa = { version = "0.9", features = ["sha2"] }
+num-bigint-dig = "0.8"
+num-traits = "0.2"
+pkcs8 = "0.10"
+pkcs1 = "0.7"
+rand = "0.8"
+base64 = "0.22"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }
+qrcode = { version = "0.14", default-features = false, features = ["image", "svg"] }
+image = "0.25"
+tauri-plugin-store = "2"

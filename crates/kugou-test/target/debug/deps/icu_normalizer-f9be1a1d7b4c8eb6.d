@@ -1,0 +1,10 @@
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\icu_normalizer-f9be1a1d7b4c8eb6.d: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\properties.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\provider.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\uts46.rs
+
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\libicu_normalizer-f9be1a1d7b4c8eb6.rlib: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\properties.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\provider.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\uts46.rs
+
+D:\workspaces\search\projects\midou-music-v2\crates\kugou-test\target\debug\deps\libicu_normalizer-f9be1a1d7b4c8eb6.rmeta: C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\lib.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\properties.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\provider.rs C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\uts46.rs
+
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\lib.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\properties.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\provider.rs:
+C:\Users\Midou\.cargo\registry\src\mirrors.ustc.edu.cn-38d0e5eb5da2abae\icu_normalizer-2.2.0\src\uts46.rs:
