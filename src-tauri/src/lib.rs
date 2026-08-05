@@ -12,6 +12,7 @@ mod commands;
 mod db;
 mod debug_log;
 mod platform;
+mod tray;
 mod types;
 
 use std::sync::Arc;
@@ -136,11 +137,14 @@ pub fn run() {
             // 后台等待 sidecar 就绪
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                let app_handle = app_handle;
+                crate::debug_log::info("startup", "等待 sidecar 就绪...");
+                // 先等 2 秒让 sidecar 完全启动
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 if let Err(e) = crate::platform::kugou_sidecar::wait_ready().await {
                     crate::debug_log::error("sidecar", &format!("就绪失败: {e}"));
                     let _ = app_handle.emit("sidecar_status", serde_json::json!({"ready": false, "error": e}));
                 } else {
+                    crate::debug_log::info("sidecar", "✅ 就绪，前端可初始化");
                     let _ = app_handle.emit("sidecar_status", serde_json::json!({"ready": true}));
                 }
             });
@@ -173,6 +177,8 @@ pub fn run() {
             sidecar_health,
             sidecar_restart,
             debug_log_write,
+            tray::init_tray,
+            tray::hide_main_window,
         ])
         .run(tauri::generate_context!())
         .expect("启动失败");

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react"
 import { invoke } from "@tauri-apps/api/core"
+import { listen } from "@tauri-apps/api/event"
 import { LazyStore } from "@tauri-apps/plugin-store"
 import { Button } from "./components/ui/button"
 import Sidebar from "./components/Sidebar"
@@ -25,28 +26,55 @@ function AppShell() {
   const [kugouLoggedIn, setKugouLoggedIn] = useState(false)
   const [kugouPlaylists, setKugouPlaylists] = useState<any[]>([])
 
-  // 初始化：注册设备 + 恢复酷狗登录态 → 拉歌单
+  const loadPlaylists = useCallback(async () => {
+    try {
+      const pl = await invoke<any[]>("kugou_playlists")
+      setKugouPlaylists(pl ?? [])
+    } catch (e) { console.error("[App] 歌单加载失败:", e) }
+  }, [])
+
+  // 初始化：等 sidecar 就绪 → 注册设备 + 恢复酷狗登录态 → 拉歌单
   useEffect(() => {
-    (async () => {
+    let unlisten: (() => void) | null = null
+    let timer: ReturnType<typeof setTimeout> | null = null
+    
+    const init = async () => {
       try {
-        // 先注册设备（模仿 MoeKoeMusic initDevice）
+        console.log("[App] 开始初始化...")
+        // 先注册设备
         try { await invoke("kugou_register_device") } catch (e) { console.warn("[App] 设备注册失败:", e) }
+        // 恢复登录态
         const saved = await store.get<any>("kugou_auth")
         if (saved?.token) {
           await invoke("kugou_set_auth", { token: saved.token, userid: Number(saved.userid) })
           setKugouLoggedIn(true)
           await loadPlaylists()
         }
+        // 初始化完成，启用托盘
+        await invoke("init_tray")
+        console.log("[App] 初始化完成，托盘已启用")
       } catch (e) { console.error("[App] 初始化失败:", e) }
-    })()
-  }, [])
-
-  const loadPlaylists = async () => {
-    try {
-      const pl = await invoke<any[]>("kugou_playlists")
-      setKugouPlaylists(pl ?? [])
-    } catch (e) { console.error("[App] 歌单加载失败:", e) }
-  }
+    }
+    
+    // 监听 sidecar 就绪事件
+    listen<{ready: boolean}>("sidecar_status", (event) => {
+      if (event.payload.ready) {
+        console.log("[App] 收到 sidecar 就绪事件")
+        init()
+      }
+    }).then((fn) => { unlisten = fn })
+    
+    // 兜底：3秒后还没收到事件就直接初始化
+    timer = setTimeout(() => {
+      console.log("[App] 3秒超时，直接初始化")
+      init()
+    }, 3000)
+    
+    return () => {
+      if (timer) clearTimeout(timer)
+      if (unlisten) unlisten()
+    }
+  }, [loadPlaylists])
 
   // ── 导航 ──
   const handleNavigate = useCallback((section: string) => {
