@@ -17,4 +17,12 @@ export default defineConfig({
       ignored: ['**/src-tauri/**'],
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(__dirname, 'index.html'),
+        player: resolve(__dirname, 'player.html'),
+      },
+    },
+  },
 });
