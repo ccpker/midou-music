@@ -12,3 +12,22 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# ── 酷狗逆向测试脚本（中间态，不入库）──────────────────
+kugou_*.mjs
+kugou_*.cjs
+test_*.js
+clear_auth.py
+convert_key.py
+make_silence.ps1
+run_midou.ps1
+_legacy*.rs
+
+# ── 运行时日志 ──────────────────────────────────────
+*.log
+
+# ── 二维码/临时图片 ──────────────────────────────────
+kugou_*.png
+
+# ── 过程排查报告（本地保留，Z 盘归档）────────────────
+midou-music_*.md
