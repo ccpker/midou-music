@@ -16,7 +16,7 @@ use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use crate::Song;
+use crate::types::Song;
 
 const SEARCH_URL: &str = "http://search.kuwo.cn/r.s";
 const PLAY_URL: &str = "https://mobi.kuwo.cn/mobi.s";
@@ -112,6 +112,7 @@ pub async fn search(
                             .parse()
                             .unwrap_or(0),
                         source: "kuwo".to_string(),
+                        cover_url: None,
                     })
                 })
                 .collect()
@@ -131,6 +132,7 @@ pub async fn play_url(
     br: &str,
 ) -> Result<Value, String> {
     let user = gen_user_param();
+    crate::debug_log::info("kuwo_play", &format!("rid={rid}, br={br}"));
 
     let resp = client
         .get(PLAY_URL)
@@ -146,12 +148,21 @@ pub async fn play_url(
         .header("User-Agent", UA_CHROME)
         .send()
         .await
-        .map_err(|e| format!("播放请求失败: {e}"))?;
+        .map_err(|e| {
+            crate::debug_log::error("kuwo_play", &format!("请求失败: {e}"));
+            format!("播放请求失败: {e}")
+        })?;
 
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("播放响应失败: {e}"))?;
+    let text = resp.text().await.map_err(|e| {
+        crate::debug_log::error("kuwo_play", &format!("读取响应失败: {e}"));
+        format!("播放响应失败: {e}")
+    })?;
+
+    crate::debug_log::info("kuwo_play", &format!("HTTP {status}, 长度={}", text.len()));
 
     if !status.is_success() {
+        crate::debug_log::error("kuwo_play", &format!("HTTP错误 {status}, 响应前200字符: {}", &text[..text.len().min(200)]));
         return Err(format!("HTTP {status}"));
     }
 
@@ -159,7 +170,9 @@ pub async fn play_url(
     match serde_json::from_str::<Value>(&text) {
         Ok(v) => {
             let code = v.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+            crate::debug_log::info("kuwo_play", &format!("JSON解析成功, code={code}"));
             if code != 200 {
+                crate::debug_log::error("kuwo_play", &format!("业务错误 code={code}, 响应: {v}"));
                 return Err(format!("code={code}"));
             }
             let url = v
@@ -168,19 +181,24 @@ pub async fn play_url(
                 .and_then(|u| u.as_str())
                 .unwrap_or("");
             if url.is_empty() {
+                crate::debug_log::error("kuwo_play", &format!("URL为空, 完整响应: {v}"));
                 return Err("播放 URL 为空".to_string());
             }
+            crate::debug_log::info("kuwo_play", &format!("成功! URL长度={}", url.len()));
             Ok(serde_json::json!({"url": url, "quality": br}))
         }
         // fallback: key=value 纯文本（旧版 API 格式）
         Err(_) => {
+            crate::debug_log::warn("kuwo_play", &format!("JSON解析失败, 尝试key=value格式"));
             for line in text.lines() {
                 if let Some(u) = line.strip_prefix("url=") {
                     if !u.trim().is_empty() {
+                        crate::debug_log::info("kuwo_play", &format!("key=value格式解析成功, URL长度={}", u.trim().len()));
                         return Ok(serde_json::json!({"url": u.trim(), "quality": br}));
                     }
                 }
             }
+            crate::debug_log::error("kuwo_play", &format!("key=value格式也失败, 响应前200字符: {}", &text[..text.len().min(200)]));
             Err(format!("无法解析播放响应: {:.200}", text))
         }
     }

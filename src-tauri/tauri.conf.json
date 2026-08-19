@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v2/packages/api/schema.json",
-  "productName": "米豆音乐",
+  "productName": "midou-music",
   "version": "0.1.0",
   "identifier": "com.midou.music",
   "build": {
@@ -12,11 +12,16 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "米豆音乐",
-        "width": 800,
-        "height": 600,
+        "width": 960,
+        "height": 640,
+        "minWidth": 800,
+        "minHeight": 500,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "center": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
       }
     ],
     "security": {

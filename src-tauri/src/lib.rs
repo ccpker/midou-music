@@ -2,81 +2,90 @@
 // 模块: lib.rs
 // 路径: src-tauri/src/lib.rs
 // ────────────────────────────────────────────
-// 功能: Tauri 应用逻辑 — 注册所有 #[tauri::command]
-// 输入: 前端 invoke() 调用
-// 输出: JSON (自动序列化)
-// 依赖: platform/kuwo.rs, reqwest
-// 测试: cargo check 通过即可
-// 接口: fn run() — Tauri Builder 入口
+// 功能: Tauri 应用入口编排
+// 规则: 围绕 Tauri 官方骨架旋转（不碰 main.rs）
+// 原则: 本文件只做模块组装，不含业务逻辑
 // ════════════════════════════════════════════════
 
+mod commands;
+mod db;
+mod debug_log;
 mod platform;
+mod types;
 
-use serde::Serialize;
+/// 前端调用的日志命令（暴露 debug_log 模块）
+#[tauri::command]
+fn debug_log_write(level: &str, tag: &str, msg: &str) {
+    match level {
+        "error" => crate::debug_log::error(tag, msg),
+        "warn" => crate::debug_log::warn(tag, msg),
+        _ => crate::debug_log::info(tag, msg),
+    }
+}
+
 use std::sync::Arc;
 use tauri::Manager;
-
-// ── 数据结构 ──
-
-#[derive(Serialize, Clone)]
-pub struct Song {
-    pub song_id: String,
-    pub name: String,
-    pub singer: String,
-    pub album: String,
-    pub duration: u32,
-    pub source: String,
-}
-
-#[derive(Serialize)]
-pub struct PlayUrlResult {
-    pub url: String,
-    pub source: String,
-    pub quality: String,
-}
-
-// ── 全局状态 ──
-
-struct AppState {
-    client: reqwest::Client,
-}
-
-// ── Tauri Commands ──
-
-#[tauri::command]
-async fn search(
-    keyword: String,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<Vec<Song>, String> {
-    platform::kuwo::search(&state.client, &keyword, 0, 20).await
-}
-
-#[tauri::command]
-async fn play_url(
-    song_id: String,
-    state: tauri::State<'_, Arc<AppState>>,
-) -> Result<PlayUrlResult, String> {
-    let v = platform::kuwo::play_url(&state.client, &song_id, "320kmp3").await?;
-    Ok(PlayUrlResult {
-        url: v["url"].as_str().unwrap_or("").to_string(),
-        source: "kuwo".to_string(),
-        quality: v["quality"].as_str().unwrap_or("320kmp3").to_string(),
-    })
-}
-
-// ── 入口 ──
+use types::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        // ── 初始化 ──────────────────────────────
         .setup(|app| {
-            let state = Arc::new(AppState {
+            // 数据目录
+            let app_dir = dirs::data_local_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("midou-music");
+            std::fs::create_dir_all(&app_dir)
+                .map_err(|e| format!("创建应用目录失败: {e}"))?;
+
+            // 调试日志
+            let log_path = app_dir.join("debug.log");
+            debug_log::init(log_path.clone());
+            debug_log::info("startup", &format!("应用启动, 日志文件={}", log_path.display()));
+
+            // 数据库
+            let db_path = app_dir.join("midou-music.db");
+            let db = rusqlite::Connection::open(&db_path)
+                .map_err(|e| format!("打开数据库失败: {e}"))?;
+            db::init_db(&db)?;
+
+            // 加载酷狗凭证
+            let kugou_auth = db::load_kugou_auth(&db);
+
+            // 注入全局状态
+            app.manage(Arc::new(AppState {
                 client: reqwest::Client::new(),
-            });
-            app.manage(state);
+                db: std::sync::Mutex::new(db),
+                kugou_auth: std::sync::Mutex::new(kugou_auth),
+            }));
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![search, play_url])
+        // ── 命令注册 ────────────────────────────
+        .invoke_handler(tauri::generate_handler![
+            // 搜索
+            commands::search::search,
+            // 播放
+            commands::play::play_url,
+            // 窗口
+            commands::window::open_player,
+            commands::window::close_player,
+            commands::window::is_player_open,
+            commands::window::emit_play_state,
+            // 酷狗扫码登录
+            commands::kugou_login::kugou_qr_key,
+            commands::kugou_login::kugou_qr_check,
+            commands::kugou_login::kugou_save_qr_token,
+            commands::kugou_login::kugou_auth_status,
+            commands::kugou_login::kugou_logout,
+            // 酷狗歌单
+            commands::kugou_playlist::kugou_playlists,
+            commands::kugou_playlist::kugou_playlist_songs,
+            // 调试日志（前端调用）
+            debug_log_write,
+        ])
         .run(tauri::generate_context!())
         .expect("启动失败");
 }
