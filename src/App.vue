@@ -9,12 +9,6 @@ import Sidebar from './components/Sidebar.vue';
 import SearchBar from './components/SearchBar.vue';
 import SongList from './components/SongList.vue';
 import KugouLogin from './components/KugouLogin.vue';
-import { startQrLogin, isLoggedIn, showPanel, qrImg } from './composables/useKugouLogin';
-import { invoke } from '@tauri-apps/api/core';
-import { runFullDiagnostic, formatReport, type CheckReport } from './composables/useDiagnostics';
-// [诊断] 暴露到 window，浏览器控制台可直接调试
-(window as any).__startQrLogin = startQrLogin;
-(window as any).__kugouState = () => ({ isLoggedIn: isLoggedIn.value, showPanel: showPanel.value, qrImgLen: qrImg.value?.length });
 import { playSong, type Song } from './composables/usePlayer';
 import { search, useSearch } from './composables/useSearch';
 import { useKugouPlaylist, type KugouPlaylistSong, type KugouPlaylist } from './composables/useKugouPlaylist';
@@ -36,55 +30,6 @@ const {
 
 const activeSection = ref('kuwo_search');
 const currentKeyword = ref('');
-
-// [最小单元测试] 纯 Vue ref，零依赖
-const testVisible = ref(false);
-const testCount = ref(0);
-function testToggle() {
-  testCount.value++;
-  testVisible.value = !testVisible.value;
-  console.warn('[测试] toggle #'+testCount.value, 'visible='+testVisible.value);
-}
-
-// [诊断] 直接调 kugou_qr_key，绕过所有 UI 逻辑
-async function diagKugouQrKey() {
-  console.warn('[diag] ═══ 直接调用 kugou_qr_key ═══');
-  try {
-    const r = await invoke('kugou_qr_key') as any;
-    console.warn('[diag] ✅ 返回:', r);
-    alert('[diag] kugou_qr_key OK\n完整key=' + (r?.qrcode_key || 'null') + '\nimg_len=' + (r?.qrcode_img?.length || 0));
-    (window as any).__qr_key = r?.qrcode_key;
-  } catch (e) {
-    console.error('[diag] ❌ 报错:', e);
-    alert('[diag] kugou_qr_key FAILED\n' + String(e));
-  }
-}
-
-// [全链路诊断]
-const diagRunning = ref(false);
-const diagReport = ref<CheckReport | null>(null);
-const diagText = ref('');
-async function runDiagnostics() {
-  if (diagRunning.value) return;
-  diagRunning.value = true;
-  diagText.value = '诊断中...\n';
-  console.warn('[diag] ═══ 开始全链路诊断 ═══');
-  try {
-    const r = await runFullDiagnostic();
-    diagReport.value = r;
-    diagText.value = formatReport(r);
-    console.warn('[diag]\n' + diagText.value);
-    alert(diagText.value);
-  } catch (e) {
-    diagText.value = '❌ 诊断崩溃: ' + String(e);
-    console.error('[diag]', e);
-  } finally {
-    diagRunning.value = false;
-  }
-}
-// 暴露供控制台调试
-(window as any).__runDiag = runDiagnostics;
-(window as any).__diagReport = () => diagReport.value;
 
 // section → 音源映射
 const SOURCE_MAP: Record<string, string> = {
@@ -142,6 +87,12 @@ async function handleOpenPlaylist(pl: KugouPlaylist) {
   await fetchPlaylistSongs(pl);
 }
 
+// 侧边栏点歌单：切到酷狗收藏区 + 加载该歌单
+async function handleOpenKugouPlaylist(pl: KugouPlaylist) {
+  activeSection.value = 'fav_kugou';
+  await handleOpenPlaylist(pl);
+}
+
 function kugouSongToSong(s: KugouPlaylistSong): Song {
   return {
     song_id: s.song_id,
@@ -184,20 +135,12 @@ function panelTitle(id: string): string {
     <Sidebar
       :active-section="activeSection"
       @navigate="navigate"
+      @open-kugou-playlist="handleOpenKugouPlaylist"
     />
 
     <!-- 扫码登录弹窗（全局） -->
     <KugouLogin />
 
-    <!-- [诊断按钮组] 移到底部不挡内容 -->
-    <div style="position:fixed;bottom:20px;right:20px;z-index:999999;display:flex;flex-direction:column;gap:8px;align-items:flex-end;">
-      <button @click="testToggle" style="padding:6px 12px;background:limegreen;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">✅ ref #{{ testCount }}</button>
-      <button @click="startQrLogin" style="padding:6px 12px;background:red;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">🔑 扫码登录</button>
-      <button @click="diagKugouQrKey" style="padding:6px 12px;background:blue;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">🔬 酷狗QR</button>
-      <button @click="runDiagnostics" :disabled="diagRunning" style="padding:6px 12px;background:purple;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">{{ diagRunning ? '⏳ 诊断中...' : '🏥 全链路诊断' }}</button>
-    </div>
-    <div v-if="testVisible" style="position:fixed;bottom:180px;right:20px;z-index:999999;background:limegreen;color:white;padding:20px;border-radius:10px;">纯ref OK</div>
-    <div v-if="showPanel" style="position:fixed;bottom:180px;right:20px;z-index:999999;background:gold;color:black;padding:20px;border-radius:10px;">showPanel=TRUE!</div>
     <!-- 播放状态横幅 -->
     <div v-if="playBanner" :style="{
       position:'fixed',top:'20px',right:'20px',zIndex:999999,

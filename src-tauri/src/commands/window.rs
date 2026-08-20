@@ -22,7 +22,7 @@ use crate::types::PlayState;
 
 const PLAYER_LABEL: &str = "player";
 const PLAYER_WIDTH: f64 = 480.0;
-const PLAYER_HEIGHT: f64 = 160.0; // 增加高度容纳调试面板
+const PLAYER_HEIGHT: f64 = 160.0; // 默认高度（无歌词）
 const PLAYER_OFFSET_BOTTOM: i32 = 20; // 距主窗口底部像素
 
 // ── 工具函数 ─────────────────────────────────────
@@ -93,6 +93,38 @@ pub async fn close_player(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn is_player_open(app: AppHandle) -> Result<bool, String> {
     Ok(app.get_webview_window(PLAYER_LABEL).is_some())
+}
+
+/// 调整播放条窗口高度（歌词展开/收起，底部锚定往上弹）
+///
+/// 调用路径: PlayerBar.vue → invoke('resize_player', { tall })
+#[tauri::command]
+pub async fn resize_player(app: AppHandle, tall: bool) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(PLAYER_LABEL) {
+        // 获取当前物理像素位置/尺寸（outer_* 返回物理像素）
+        let pos = win.outer_position().map_err(|e| e.to_string())?;
+        let size = win.outer_size().map_err(|e| e.to_string())?;
+        let scale = win.scale_factor().unwrap_or(1.0);
+
+        // 目标逻辑高度（160 / 400 逻辑像素）
+        let new_logical_h = if tall { 400.0 } else { PLAYER_HEIGHT };
+        let new_physical_h = (new_logical_h * scale).round() as u32;
+
+        // 底部锚定：底边物理 y 坐标不变，顶部向上伸缩
+        let bottom = pos.y + size.height as i32;
+        let new_y = bottom - new_physical_h as i32;
+
+        // 用物理像素设置尺寸和位置，避免缩放换算错位
+        win.set_size(tauri::PhysicalSize::new(PLAYER_WIDTH as u32, new_physical_h))
+            .map_err(|e| format!("调整播放条尺寸失败: {e}"))?;
+        win.set_position(tauri::PhysicalPosition::new(pos.x, new_y))
+            .map_err(|e| format!("调整播放条位置失败: {e}"))?;
+        crate::debug_log::info(
+            "window",
+            &format!("resize_player: tall={tall}, scale={scale}, physical_h={new_physical_h}, y={new_y}"),
+        );
+    }
+    Ok(())
 }
 
 /// 发送播放状态（emit 到所有窗口）

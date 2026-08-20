@@ -41,6 +41,9 @@ const loadingSongs = ref(false)
 const error = ref('')
 const currentPlaylist = ref<KugouPlaylist | null>(null)
 
+// 导出 ref（供 Sidebar 等组件直接引用）
+export { playlists, currentPlaylist, songs }
+
 // ── 拉歌单列表 ─────────────────────────────────────
 
 export async function fetchPlaylists(): Promise<void> {

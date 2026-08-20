@@ -10,11 +10,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { listen, emit as emitEvent, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { parseLrc, findCurrentLine, fetchLyric, type LyricLine } from '../composables/useLyric';
 
 interface Song {
   song_id: string;
   name: string;
   singer: string;
+  album: string;
+  duration: number;
   source: string;
   cover_url?: string;
 }
@@ -36,6 +39,16 @@ const volume = ref(0.8);
 
 const audio = ref<HTMLAudioElement | null>(null);
 let unlisten: UnlistenFn | null = null;
+
+// ── 歌词状态 ─────────────────────────────────────
+const lyricLines = ref<LyricLine[]>([]);
+const lyricRaw = ref('');
+const currentLineIdx = ref(-1);
+const showLyric = ref(false);
+let lyricLoading = false;
+
+// 歌词容器（滚动用）
+const lyricScroller = ref<HTMLElement | null>(null);
 
 // 格式化时间 mm:ss
 function fmt(s: number) {
@@ -86,17 +99,6 @@ async function closePlayer() {
   await win.close();
 }
 
-// 窗口拖动
-async function startDrag(e: MouseEvent) {
-  // 如果点击的是按钮等交互元素，不触发拖动
-  const target = e.target as HTMLElement;
-  if (target.closest('.no-drag') || target.closest('button') || target.closest('.progress-bar')) {
-    return;
-  }
-  const win = getCurrentWindow();
-  await win.startDragging();
-}
-
 onMounted(async () => {
   // 创建 audio 元素
   audio.value = new Audio();
@@ -119,6 +121,8 @@ onMounted(async () => {
 
   audio.value.addEventListener('timeupdate', () => {
     position.value = audio.value!.currentTime;
+    // 同步歌词高亮
+    syncLyric();
     // 同步回主窗口
     emitEvent('player_position', {
       position: audio.value!.currentTime,
@@ -174,7 +178,7 @@ onMounted(async () => {
   audio.value.addEventListener('play', () => { isPlaying.value = true; });
   audio.value.addEventListener('pause', () => { isPlaying.value = false; });
 
-  // 监听主窗口推送的播放状态
+    // 监听主窗口推送的播放状态
   unlisten = await listen<PlayState>('play_state', (ev) => {
     const s = ev.payload;
     console.warn('[PlayerBar] 收到 play_state:', s?.song?.name, 'url长度=', s?.url?.length);
@@ -182,6 +186,8 @@ onMounted(async () => {
     // 强制更新：只要有 song 就更新（不管 URL 是否变化，因为可能是同一首歌重新播放）
     if (s.song) {
       currentSong.value = s.song;
+      // 换歌：加载歌词
+      loadLyric(s.song);
     }
     
     if (s.url) {
@@ -220,89 +226,163 @@ onMounted(async () => {
   });
 });
 
+// ── 歌词加载 ─────────────────────────────────────
+
+async function loadLyric(song: Song) {
+  lyricLoading = true;
+  lyricLines.value = [];
+  lyricRaw.value = '';
+  currentLineIdx.value = -1;
+  try {
+    const lrc = await fetchLyric({
+      name: song.name,
+      singer: song.singer,
+      duration: song.duration,
+      source: song.source,
+      song_id: song.song_id,
+    });
+    if (lrc) {
+      lyricRaw.value = lrc;
+      lyricLines.value = parseLrc(lrc);
+      showLyric.value = lyricLines.value.length > 0;
+      writeDebug(`歌词加载: ${lyricLines.value.length} 行`);
+    } else {
+      showLyric.value = false;
+      writeDebug('无歌词');
+    }
+  } catch (e) {
+    showLyric.value = false;
+    writeDebug('歌词加载失败: ' + String(e));
+  } finally {
+    lyricLoading = false;
+  }
+}
+
+// 切换歌词显示
+async function toggleLyric() {
+  showLyric.value = !showLyric.value;
+  try {
+    await invoke('resize_player', { tall: showLyric.value });
+  } catch (e) {
+    console.warn('[PlayerBar] 调整窗口高度失败:', e);
+  }
+}
+
+// 点击某行歌词跳转
+function seekToLine(line: LyricLine) {
+  if (audio.value) {
+    audio.value.currentTime = line.time;
+  }
+}
+
+// ── 歌词同步 ─────────────────────────────────────
+
+function syncLyric() {
+  if (!audio.value || lyricLines.value.length === 0) return;
+  const idx = findCurrentLine(lyricLines.value, audio.value.currentTime);
+  if (idx !== currentLineIdx.value) {
+    currentLineIdx.value = idx;
+    // 滚动到当前行
+    scrollLyricToCurrent();
+  }
+}
+
+function scrollLyricToCurrent() {
+  const el = lyricScroller.value;
+  if (!el) return;
+  const active = el.querySelector('.lyric-line.active') as HTMLElement | null;
+  if (active) {
+    const containerH = el.clientHeight;
+    const lineH = active.offsetHeight || 28;
+    const target = active.offsetTop - containerH / 2 + lineH / 2;
+    el.scrollTo({ top: target, behavior: 'smooth' });
+  }
+}
+
 onUnmounted(() => {
   unlisten?.();
   audio.value?.pause();
   audio.value!.src = '';
 });
 
-// 复制调试信息
-function copyDebug() {
-  navigator.clipboard.writeText(debugInfo.value).catch(() => {});
+// ── 拖拽区域递归绑定 ───────────────────────────
+// data-tauri-drag-region 不会自动传播到子元素，需递归给所有非交互子元素添加
+const NO_DRAG_SELECTOR = '.no-drag, button, .progress-bar, .lyric-panel';
+
+function applyDragRegion(el: HTMLElement) {
+  if (el.matches?.(NO_DRAG_SELECTOR)) return;
+  el.setAttribute('data-tauri-drag-region', '');
+  Array.from(el.children).forEach((child) => applyDragRegion(child as HTMLElement));
 }
 
+onMounted(() => {
+  // 递归给顶部 drag-area 的所有子元素绑定拖拽（跳过按钮/进度条/歌词）
+  const dragArea = document.querySelector('.drag-area') as HTMLElement | null;
+  if (dragArea) applyDragRegion(dragArea);
+});
+
+// 复制调试信息
 function writeDebug(msg: string) {
-  // 同时显示在界面上和写到日志文件
-  debugInfo.value = msg;
   invoke('debug_log_write', { level: 'info', tag: 'player_bar', msg }).catch(() => {});
 }
 
 function writeError(msg: string) {
-  debugInfo.value = msg;
   invoke('debug_log_write', { level: 'error', tag: 'player_bar', msg }).catch(() => {});
 }
-
-const debugInfo = ref('等待音频...');
-const showDebug = ref(true);
-
-// 每秒更新一次调试信息
-let debugInterval: number | null = null;
-onMounted(() => {
-  debugInterval = window.setInterval(() => {
-    if (!audio.value) {
-      writeDebug('audio=null');
-      return;
-    }
-    const a = audio.value;
-    const states = ['HAVE_NOTHING', 'HAVE_METADATA', 'HAVE_CURRENT_DATA', 'HAVE_FUTURE_DATA', 'HAVE_ENOUGH_DATA'];
-    writeDebug(`readyState=${states[a.readyState]||a.readyState}, paused=${a.paused}, duration=${a.duration}, currentTime=${a.currentTime.toFixed(1)}`);
-  }, 2000);
-});
-onUnmounted(() => {
-  if (debugInterval) clearInterval(debugInterval);
-});
 </script>
 
 <template>
-  <div class="player-bar" @mousedown="startDrag">
-    <!-- 拖动区：左侧封面+歌名 -->
+  <div class="player-bar">
+    <!-- 顶部可拖动区（封面+歌名+进度条整行） -->
     <div class="drag-area" data-tauri-drag-region>
-      <div class="cover" :style="currentSong?.cover_url ? `background-image:url(${currentSong.cover_url})` : ''">
-        🎵
+      <!-- 封面+歌名 -->
+      <div class="song-row">
+        <div class="cover" :style="currentSong?.cover_url ? `background-image:url(${currentSong.cover_url})` : ''">
+          🎵
+        </div>
+        <div class="song-info">
+          <div class="song-name">{{ currentSong?.name || '未播放' }}</div>
+          <div class="song-singer">{{ currentSong?.singer || '' }}</div>
+        </div>
       </div>
-      <div class="song-info">
-        <div class="song-name">{{ currentSong?.name || '未播放' }}</div>
-        <div class="song-singer">{{ currentSong?.singer || '' }}</div>
+
+      <!-- 进度条 -->
+      <div class="progress-area">
+        <div class="time left">{{ posStr }}</div>
+        <div class="progress-bar" @mousedown.stop @click.stop="seek">
+          <div class="progress-fill" :style="{ width: progress + '%' }" />
+        </div>
+        <div class="time right">{{ durStr }}</div>
       </div>
     </div>
 
-    <!-- 中间：进度条 -->
-    <div class="progress-area">
-      <div class="time left">{{ posStr }}</div>
-      <div class="progress-bar" @click="seek">
-        <div class="progress-fill" :style="{ width: progress + '%' }" />
-      </div>
-      <div class="time right">{{ durStr }}</div>
+    <!-- 歌词区（在控制按钮上方展开） -->
+    <div v-if="showLyric" class="lyric-panel no-drag" ref="lyricScroller">
+      <p v-if="lyricLines.length === 0" class="lyric-empty">暂无歌词</p>
+      <template v-else>
+        <div
+          v-for="(line, i) in lyricLines"
+          :key="i"
+          class="lyric-line"
+          :class="{ active: i === currentLineIdx }"
+          @click="seekToLine(line)"
+        >
+          {{ line.text }}
+        </div>
+      </template>
     </div>
 
-    <!-- 右侧：控制按钮 -->
+    <!-- 右侧：控制按钮（固定在底部） -->
     <div class="controls no-drag">
       <button @click="prev" title="上一首">⏮</button>
       <button class="play-btn" @click="togglePlay" title="播放/暂停">
         {{ isPlaying ? '⏸' : '▶' }}
       </button>
       <button @click="next" title="下一首">⏭</button>
+      <!-- 歌词开关 -->
+      <button class="lyric-btn" :class="{ on: showLyric }" @click="toggleLyric" title="歌词">🎤</button>
       <!-- 关闭按钮 -->
       <button class="close-btn" @click="closePlayer" title="关闭播放条">✕</button>
-    </div>
-    
-    <!-- 调试信息面板 -->
-    <div v-if="showDebug" class="debug-panel no-drag">
-      <div class="debug-text">{{ debugInfo }}</div>
-      <div class="debug-hint">
-        <button class="copy-btn" @click="copyDebug">复制</button>
-        音频状态监控
-      </div>
     </div>
   </div>
 </template>
@@ -323,16 +403,22 @@ onUnmounted(() => {
   user-select: none;
 }
 
-/* 拖动区 */
+/* 拖动区（整个顶部：封面+歌名+进度条） */
 .drag-area {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   padding: 8px 12px 4px;
   cursor: grab;
   flex-shrink: 0;
 }
 .drag-area:active { cursor: grabbing; }
+
+.song-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
 .cover {
   width: 36px;
@@ -439,29 +525,59 @@ button:hover {
   background: rgba(255,100,100,0.1);
 }
 
-/* 调试面板 - 放顶部更明显 */
-.debug-panel {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  right: 2px;
-  background: rgba(0,0,0,0.9);
-  border: 2px solid #ff6b6b;
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 10px;
-  font-family: monospace;
-  color: #ff6b6b;
-  z-index: 9999;
+/* ── 歌词按钮 ────────────────────────────────── */
+.lyric-btn {
+  color: rgba(255,255,255,0.5);
+  font-size: 14px;
+  transition: color 0.15s;
+}
+.lyric-btn.on {
+  color: #7c6af7;
+}
+
+/* ── 歌词面板 ────────────────────────────────── */
+.lyric-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.25);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+.lyric-panel::-webkit-scrollbar {
+  width: 4px;
+}
+.lyric-panel::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+}
+.lyric-line {
+  font-size: 13px;
+  line-height: 2.1;
+  color: rgba(255,255,255,0.45);
   cursor: pointer;
-}
-.debug-text {
-  line-height: 1.4;
-}
-.debug-hint {
-  font-size: 8px;
-  color: rgba(255,255,255,0.4);
   text-align: center;
-  margin-top: 2px;
+  padding: 1px 0;
+  transition: color 0.2s, transform 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lyric-line:hover {
+  color: rgba(255,255,255,0.75);
+}
+.lyric-line.active {
+  color: #7c6af7;
+  font-weight: 600;
+  font-size: 14px;
+  transform: scale(1.02);
+}
+.lyric-empty {
+  text-align: center;
+  color: rgba(255,255,255,0.3);
+  font-size: 12px;
+  margin: 20px 0;
 }
 </style>

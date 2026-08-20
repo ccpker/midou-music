@@ -33,8 +33,6 @@ function onClick(song: Song, event: MouseEvent) {
     target.style.background = '';
   }, 200);
   
-  alert('点击了: ' + song.name + ' (id=' + song.song_id + ')');
-  console.warn('[SongList] 点击:', song.name, song.song_id);
   emit('play', song);
 }
 

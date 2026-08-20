@@ -6,6 +6,7 @@
  */
 import { ref } from 'vue'
 import { isLoggedIn as kugouLoggedIn, startQrLogin } from '../composables/useKugouLogin'
+import { playlists, fetchPlaylists, currentPlaylist, type KugouPlaylist } from '../composables/useKugouPlaylist'
 import type { PropType } from 'vue'
 
 defineProps({
@@ -14,6 +15,7 @@ defineProps({
 
 const emit = defineEmits<{
   (e: 'navigate', section: string): void;
+  (e: 'openKugouPlaylist', playlist: KugouPlaylist): void;
 }>();
 
 // 展开状态
@@ -24,6 +26,10 @@ function toggleExpand(id: string) {
   // 点击音源一级时同时切换到对应搜索面板
   if (['kuwo_search','bili_search','kugou_search'].includes(id)) {
     emit('navigate', id)
+  }
+  // 展开酷狗且已登录时拉歌单列表
+  if (id === 'kugou_search' && kugouLoggedIn.value && playlists.value.length === 0) {
+    fetchPlaylists()
   }
 }
 
@@ -75,15 +81,27 @@ const local = [
           >
             <span class="sep">🔑</span>扫码登录
           </div>
-          <!-- 酷狗：已登录显示收藏 -->
-          <div
-            v-if="s.id === 'kugou_search' && kugouLoggedIn"
-            class="sidebar-item child"
-            :class="{ active: activeSection === 'fav_kugou' }"
-            @click="emit('navigate', 'fav_kugou')"
-          >
-            <span class="sep">♡</span>我的收藏
-          </div>
+          <!-- 酷狗：已登录显示收藏 + 歌单三级列表 -->
+          <template v-if="s.id === 'kugou_search' && kugouLoggedIn">
+            <!-- 我的收藏（入口） -->
+            <div
+              class="sidebar-item child"
+              :class="{ active: activeSection === 'fav_kugou' && !currentPlaylist }"
+              @click="emit('navigate', 'fav_kugou')"
+            >
+              <span class="sep">♡</span>我的收藏
+            </div>
+            <!-- 歌单子分类 -->
+            <div
+              v-for="pl in playlists"
+              :key="pl.global_collection_id"
+              class="sidebar-item child sub-playlist"
+              :class="{ active: currentPlaylist?.global_collection_id === pl.global_collection_id }"
+              @click="emit('openKugouPlaylist', pl)"
+            >
+              <span class="sep">♪</span>{{ pl.name }}
+            </div>
+          </template>
           <!-- 其他平台：收藏 -->
           <div
             v-if="s.id !== 'kugou_search'"
@@ -220,6 +238,19 @@ const local = [
 }
 .sidebar-item.kugou-login.active {
   color: rgba(255, 200, 80, 1);
+}
+
+/* 歌单三级子项 */
+.sidebar-item.sub-playlist {
+  padding-left: 52px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+}
+.sidebar-item.sub-playlist:hover {
+  color: rgba(255,255,255,0.8);
+}
+.sidebar-item.sub-playlist.active {
+  color: #a89cff;
 }
 
 .sidebar-item.disabled {
