@@ -8,6 +8,7 @@
 
 pub mod kugou_login;
 pub mod kugou_playlist;
+pub mod lyric;
 pub mod play;
 pub mod search;
 pub mod window;

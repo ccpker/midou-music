@@ -73,6 +73,7 @@ pub fn run() {
             commands::window::open_player,
             commands::window::close_player,
             commands::window::is_player_open,
+            commands::window::resize_player,
             commands::window::emit_play_state,
             // 酷狗扫码登录
             commands::kugou_login::kugou_qr_key,
@@ -83,6 +84,8 @@ pub fn run() {
             // 酷狗歌单
             commands::kugou_playlist::kugou_playlists,
             commands::kugou_playlist::kugou_playlist_songs,
+            // 歌词
+            commands::lyric::get_lyric,
             // 调试日志（前端调用）
             debug_log_write,
         ])

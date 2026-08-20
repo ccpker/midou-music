@@ -9,3 +9,4 @@
 pub mod bili;
 pub mod kuwo;
 pub mod kugou;
+pub mod lyric;
