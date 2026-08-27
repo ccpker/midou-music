@@ -84,6 +84,9 @@ pub fn run() {
             // 酷狗歌单
             commands::kugou_playlist::kugou_playlists,
             commands::kugou_playlist::kugou_playlist_songs,
+            // 酷狗 VIP 签到
+            commands::kugou_vip::kugou_sign_vip,
+            commands::kugou_vip::kugou_vip_status,
             // 歌词
             commands::lyric::get_lyric,
             // 调试日志（前端调用）

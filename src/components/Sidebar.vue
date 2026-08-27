@@ -5,7 +5,7 @@
  * 标注: 纯展示，emit 事件驱动 App.vue 更新 activeSection
  */
 import { ref } from 'vue'
-import { isLoggedIn as kugouLoggedIn, startQrLogin } from '../composables/useKugouLogin'
+import { isLoggedIn as kugouLoggedIn, startQrLogin, logout as kugouLogout } from '../composables/useKugouLogin'
 import { playlists, fetchPlaylists, currentPlaylist, type KugouPlaylist } from '../composables/useKugouPlaylist'
 import type { PropType } from 'vue'
 
@@ -36,6 +36,11 @@ function toggleExpand(id: string) {
 function handleKugouLogin() {
   console.warn('[Sidebar] 点击扫码登录')
   startQrLogin()
+}
+
+function handleKugouLogout() {
+  console.warn('[Sidebar] 点击退出登录')
+  kugouLogout()
 }
 
 // ── 菜单结构 ─────────────────────────────────────
@@ -100,6 +105,13 @@ const local = [
               @click="emit('openKugouPlaylist', pl)"
             >
               <span class="sep">♪</span>{{ pl.name }}
+            </div>
+            <!-- 退出登录 -->
+            <div
+              class="sidebar-item child kugou-logout"
+              @click="handleKugouLogout"
+            >
+              <span class="sep">🚪</span>退出登录
             </div>
           </template>
           <!-- 其他平台：收藏 -->
@@ -238,6 +250,16 @@ const local = [
 }
 .sidebar-item.kugou-login.active {
   color: rgba(255, 200, 80, 1);
+}
+
+/* 退出登录 */
+.sidebar-item.kugou-logout {
+  color: rgba(255, 120, 120, 0.6);
+  margin-top: 4px;
+}
+.sidebar-item.kugou-logout:hover {
+  color: rgba(255, 120, 120, 1);
+  background: rgba(255, 90, 90, 0.08);
 }
 
 /* 歌单三级子项 */

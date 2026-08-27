@@ -12,6 +12,7 @@ import KugouLogin from './components/KugouLogin.vue';
 import { playSong, type Song } from './composables/usePlayer';
 import { search, useSearch } from './composables/useSearch';
 import { useKugouPlaylist, type KugouPlaylistSong, type KugouPlaylist } from './composables/useKugouPlaylist';
+import { vipStatus, signLoading, signError, signSuccess, fetchVipStatus, signVip } from './composables/useKugouVip';
 
 const { results, loading } = useSearch();
 
@@ -43,9 +44,13 @@ const SOURCE_MAP: Record<string, string> = {
 
 function navigate(section: string) {
   activeSection.value = section;
-  // 进入酷狗收藏时自动拉取歌单列表
+  // 进入酷狗相关页面时自动拉取歌单列表 + VIP 状态
   if (section === 'fav_kugou') {
     fetchPlaylists();
+    fetchVipStatus();
+  }
+  if (section === 'kugou_search') {
+    fetchVipStatus();
   }
   // 切换到有结果的平台时自动重搜
   if (currentKeyword.value && SOURCE_MAP[section]) {
@@ -198,6 +203,29 @@ function panelTitle(id: string): string {
             <h2>{{ panelTitle(activeSection) }}</h2>
             <span class="count" v-if="results.length">共 {{ results.length }} 首</span>
           </div>
+
+          <!-- VIP 签到卡片 -->
+          <div class="vip-card">
+            <div class="vip-card-row">
+              <div class="vip-info">
+                <span class="vip-badge" v-if="vipStatus?.tvip">👑 概念版畅听 VIP</span>
+                <span class="vip-badge none" v-else>未领 VIP</span>
+                <span class="vip-expire" v-if="vipStatus?.tvip?.vip_end_time">
+                  到期 {{ vipStatus.tvip.vip_end_time }}
+                </span>
+              </div>
+              <button
+                class="vip-btn"
+                :disabled="signLoading"
+                @click="signVip"
+              >
+                {{ signLoading ? '签到中...' : '🎁 签到领 VIP' }}
+              </button>
+            </div>
+            <div class="vip-msg" v-if="signSuccess" style="color:#2ecc71">{{ signSuccess }}</div>
+            <div class="vip-msg" v-if="signError" style="color:#ff6b6b">{{ signError }}</div>
+          </div>
+
           <p v-if="loading" class="status">搜索中...</p>
           <p v-else-if="results.length === 0 && !loading && !currentKeyword" class="status hint">
             输入关键词开始搜索酷狗音乐
@@ -215,6 +243,28 @@ function panelTitle(id: string): string {
         <!-- 酷狗收藏 -->
         <template v-else-if="activeSection === 'fav_kugou'">
           <div class="content-header"><h2>{{ panelTitle(activeSection) }}</h2></div>
+
+          <!-- VIP 签到卡片 -->
+          <div class="vip-card">
+            <div class="vip-card-row">
+              <div class="vip-info">
+                <span class="vip-badge" v-if="vipStatus?.tvip">👑 概念版畅听 VIP</span>
+                <span class="vip-badge none" v-else>未领 VIP</span>
+                <span class="vip-expire" v-if="vipStatus?.tvip?.vip_end_time">
+                  到期 {{ vipStatus.tvip.vip_end_time }}
+                </span>
+              </div>
+              <button
+                class="vip-btn"
+                :disabled="signLoading"
+                @click="signVip"
+              >
+                {{ signLoading ? '签到中...' : '🎁 签到领 VIP' }}
+              </button>
+            </div>
+            <div class="vip-msg" v-if="signSuccess" style="color:#2ecc71">{{ signSuccess }}</div>
+            <div class="vip-msg" v-if="signError" style="color:#ff6b6b">{{ signError }}</div>
+          </div>
 
           <!-- 未进入歌单：显示歌单列表 -->
           <template v-if="!currentPlaylist">
@@ -343,6 +393,63 @@ function panelTitle(id: string): string {
 }
 
 /* ── 歌单列表 ────────────────────────────────── */
+.vip-card {
+  background: linear-gradient(135deg, rgba(124,106,247,0.15), rgba(255,170,80,0.1));
+  border: 1px solid rgba(124,106,247,0.35);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.vip-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.vip-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.vip-badge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffc14d;
+}
+.vip-badge.none {
+  color: rgba(255,255,255,0.45);
+  font-weight: 500;
+}
+.vip-expire {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+}
+.vip-btn {
+  background: rgba(255,193,77,0.9);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #3a2a00;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.vip-btn:hover:not(:disabled) {
+  background: #ffc14d;
+  transform: translateY(-1px);
+}
+.vip-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.vip-msg {
+  font-size: 12px;
+  margin-top: 8px;
+}
+
 .playlist-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

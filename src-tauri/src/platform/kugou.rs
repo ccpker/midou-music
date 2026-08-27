@@ -549,3 +549,138 @@ fn split_song_name(raw: &str) -> (String, String) {
         (raw.to_string(), String::new())
     }
 }
+
+// ── VIP 签到 ─────────────────────────────────────
+//
+// moekoe 机制：扫码拿 web token → 签到领 VIP（receive_vip_listen_song）
+// → 账号获得概念版 tvip（1 天）→ 就能播 VIP 完整版。
+// 已实测：扫码 token 直接签到成功（status:1 error_code:0）。
+// 签名 = android 概念版 + 完整参数集（同 fetch_playlists）。
+
+/// 获取上海时区的当天日期（YYYY-MM-DD，签到 receive_day 用）
+fn today_ymd_shanghai() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // UTC+8
+    let total = secs + 8 * 3600;
+    let days = total / 86400;
+    let rem = total % 86400;
+    let (y, m, d) = civil_from_days(days as i64);
+    let _ = rem;
+    format!("{:04}-{:02}-{:02}", y, m, d)
+}
+
+/// 从 1970-01-01 起的天数反推年月日（Howard Hinnant 算法）
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    (if m <= 2 { y + 1 } else { y }, m, d)
+}
+
+/// 签到领 1 天 VIP（youth_day_vip）
+/// 接口: POST /youth/v1/recharge/receive_vip_listen_song
+/// params: source_id=90139, receive_day=YYYY-MM-DD（走 query）
+pub async fn sign_vip(client: &Client, auth: &KugouAuth) -> Result<serde_json::Value, String> {
+    if !auth.logged_in || auth.token.is_empty() {
+        return Err("请先登录酷狗".to_string());
+    }
+
+    let clienttime = current_timestamp_secs();
+    let mid = generate_mid();
+    let uuid = generate_uuid();
+    let clienttime_str = clienttime.to_string();
+    let userid_str = auth.userid.to_string();
+    let receive_day = today_ymd_shanghai();
+
+    // 完整参数集（与参考库 request.js 默认参数 + 业务参数一致）
+    let mut params: Vec<(&str, &str)> = vec![
+        ("source_id", "90139"),
+        ("receive_day", &receive_day),
+        ("appid", APPID),
+        ("clientver", CLIENTVER),
+        ("clienttime", &clienttime_str),
+        ("dfid", &auth.dfid),
+        ("mid", &mid),
+        ("uuid", &uuid),
+        ("token", &auth.token),
+        ("userid", &userid_str),
+    ];
+    let signature = compute_signature(&params, "");
+    params.push(("signature", &signature));
+
+    let url = format!("{}/youth/v1/recharge/receive_vip_listen_song", GATEWAY);
+    let resp = client
+        .post(&url)
+        .query(&params)
+        .header("User-Agent", "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi")
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .send()
+        .await
+        .map_err(|e| format!("签到请求失败: {e}"))?;
+
+    let text = resp.text().await.map_err(|e| format!("签到响应失败: {e}"))?;
+    let root: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("签到JSON解析失败: {e}, body={:.300}", text))?;
+
+    let status = root.get("status").and_then(|v| v.as_i64()).unwrap_or(0);
+    if status != 1 {
+        let ec = root.get("error_code").and_then(|v| v.as_i64()).unwrap_or(0);
+        let msg = root.get("error_msg").and_then(|v| v.as_str()).unwrap_or("");
+        return Err(format!("签到失败 status={} error_code={} {}", status, ec, msg));
+    }
+
+    Ok(root)
+}
+
+/// 查询当前账号 VIP 状态（get_union_vip）
+/// 接口: GET https://kugouvip.kugou.com/v1/get_union_vip
+/// 关键: VIP 权益藏在 busi_vip[] 数组（product_type=tvip 且 is_vip=1）
+pub async fn get_vip_status(client: &Client, auth: &KugouAuth) -> Result<serde_json::Value, String> {
+    let clienttime = current_timestamp_secs();
+    let mid = generate_mid();
+    let uuid = generate_uuid();
+    let clienttime_str = clienttime.to_string();
+    let userid_str = auth.userid.to_string();
+
+    let mut params: Vec<(&str, &str)> = vec![
+        ("busi_type", "concept"),
+        ("opt_product_types", "dvip,qvip"),
+        ("product_type", "svip"),
+        ("appid", APPID),
+        ("clientver", CLIENTVER),
+        ("clienttime", &clienttime_str),
+        ("dfid", &auth.dfid),
+        ("mid", &mid),
+        ("uuid", &uuid),
+    ];
+    if auth.logged_in && !auth.token.is_empty() {
+        params.push(("token", &auth.token));
+        params.push(("userid", &userid_str));
+    }
+    let signature = compute_signature(&params, "");
+    params.push(("signature", &signature));
+
+    let url = "https://kugouvip.kugou.com/v1/get_union_vip";
+    let resp = client
+        .get(url)
+        .query(&params)
+        .header("User-Agent", "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi")
+        .send()
+        .await
+        .map_err(|e| format!("查询VIP请求失败: {e}"))?;
+
+    let text = resp.text().await.map_err(|e| format!("查询VIP响应失败: {e}"))?;
+    let root: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("查询VIP JSON解析失败: {e}, body={:.300}", text))?;
+
+    Ok(root)
+}
