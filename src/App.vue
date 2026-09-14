@@ -14,11 +14,14 @@ import FolderNode from './components/FolderNode.vue';
 import { playSong, type Song } from './composables/usePlayer';
 import { search, useSearch } from './composables/useSearch';
 import { useKugouPlaylist, type KugouPlaylistSong, type KugouPlaylist } from './composables/useKugouPlaylist';
-import { vipStatus, isSignedToday, signLoading, signError, signSuccess, fetchVipStatus, signVip, autoSignVip, bindAutoSign } from './composables/useKugouVip';
+import { vipStatus, isSignedToday, signLoading, signError, signSuccess, fetchVipStatus, signVip, autoSignVip, bindAutoSign, watchAd, adLoading, adResult, adError } from './composables/useKugouVip';
+import { useKugouFm, type FmSong } from './composables/useKugouFm';
 import { downloadSong, libraryRoot } from './composables/useDownload';
 import { libraryTree, libraryLoading, libraryError, currentFolder, scanLibrary, openFolder, type LibraryNode, type LocalSong } from './composables/useLibrary';
 
 const { results, loading } = useSearch();
+
+const { fmSongs, loading: fmLoading, error: fmError, fetchPersonalFm } = useKugouFm();
 
 const {
   playlists,
@@ -127,6 +130,33 @@ async function handleDownloadKugouFav(s: KugouPlaylistSong) {
   await handleDownload(kugouSongToSong(s));
 }
 
+// ── 私人 FM ─────────────────────────────────────
+
+function fmSongToSong(s: FmSong): Song {
+  return {
+    song_id: s.song_id,
+    name: s.name,
+    singer: s.singer,
+    album: s.album,
+    duration: s.duration,
+    source: s.source,
+    cover_url: s.cover_url,
+  };
+}
+
+async function handlePlayFm(s: FmSong) {
+  await handlePlay(fmSongToSong(s));
+}
+
+async function handleDownloadFm(s: FmSong) {
+  await handleDownload(fmSongToSong(s));
+}
+
+async function handleOpenFm() {
+  activeSection.value = 'fm_kugou';
+  await fetchPersonalFm();
+}
+
 // ── 下载 ────────────────────────────────────────
 
 const dlBanner = ref<{ name: string; ok: boolean; msg: string } | null>(null);
@@ -182,6 +212,7 @@ function panelTitle(id: string): string {
     fav_kuwo:    '♡ 酷我收藏',
     fav_bili:    '♡ B站收藏',
     fav_kugou:   '♡ 酷狗收藏',
+    fm_kugou:    '🎧 酷狗私人FM',
     local_all:   '📂 本地歌曲',
     settings:    '⚙ 设置',
   };
@@ -326,6 +357,16 @@ function fileNameFromPath(p: string): string {
         <template v-else-if="activeSection === 'fav_kugou'">
           <div class="content-header"><h2>{{ panelTitle(activeSection) }}</h2></div>
 
+          <!-- 私人 FM 入口 -->
+          <div class="fm-entry" @click="handleOpenFm">
+            <span class="fm-entry-icon">🎧</span>
+            <div class="fm-entry-body">
+              <div class="fm-entry-title">私人 FM</div>
+              <div class="fm-entry-desc">根据你的听歌口味，推荐你可能喜欢的歌</div>
+            </div>
+            <span class="fm-entry-arrow">▶</span>
+          </div>
+
           <!-- 未进入歌单：显示歌单列表 -->
           <template v-if="!currentPlaylist">
             <p v-if="loadingLists" class="status">加载歌单中...</p>
@@ -356,6 +397,20 @@ function fileNameFromPath(p: string): string {
             <SongList v-else-if="kugouSongs.length > 0" :songs="kugouSongs" @play="handlePlayKugouFav" @download="handleDownloadKugouFav" />
             <p v-else class="status hint">该歌单暂无歌曲</p>
           </template>
+        </template>
+
+        <!-- 酷狗私人FM -->
+        <template v-else-if="activeSection === 'fm_kugou'">
+          <div class="content-header">
+            <h2>{{ panelTitle(activeSection) }}</h2>
+            <button class="refresh-btn" :disabled="fmLoading" @click="fetchPersonalFm">
+              {{ fmLoading ? '推荐中...' : '🔄 换一批' }}
+            </button>
+          </div>
+          <p v-if="fmLoading" class="status">正在推荐...</p>
+          <p v-else-if="fmError" class="status hint">{{ fmError }}</p>
+          <SongList v-else-if="fmSongs.length > 0" :songs="fmSongs.map(fmSongToSong)" @play="handlePlayFm" @download="handleDownloadFm" />
+          <p v-else class="status hint">暂无推荐，点击右上角换一批</p>
         </template>
 
         <!-- 酷我收藏 -->
@@ -449,10 +504,15 @@ function fileNameFromPath(p: string): string {
                 <button class="vip-btn" :disabled="signLoading" @click="signVip">
                   {{ signLoading ? '签到中...' : '手动签到' }}
                 </button>
+                <button class="vip-btn ad-btn" :disabled="adLoading" @click="watchAd">
+                  {{ adLoading ? '看广告中...' : '📺 看广告领时长' }}
+                </button>
               </div>
             </div>
             <div class="vip-msg" v-if="signSuccess" style="color:#2ecc71">{{ signSuccess }}</div>
             <div class="vip-msg" v-if="signError" style="color:#ff6b6b">{{ signError }}</div>
+            <div class="vip-msg" v-if="adResult" style="color:#2ecc71">{{ adResult }}</div>
+            <div class="vip-msg" v-if="adError" style="color:#ff6b6b">{{ adError }}</div>
           </div>
         </template>
 
@@ -545,6 +605,74 @@ function fileNameFromPath(p: string): string {
 .vip-msg {
   font-size: 12px;
   margin-top: 8px;
+}
+
+/* 看广告领时长按钮 */
+.vip-btn.ad-btn {
+  background: rgba(124, 106, 247, 0.25);
+  color: #a89cff;
+}
+.vip-btn.ad-btn:hover:not(:disabled) {
+  background: rgba(124, 106, 247, 0.4);
+}
+
+/* 私人 FM 入口卡片 */
+.fm-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, rgba(124,106,247,0.15), rgba(124,106,247,0.05));
+  border: 1px solid rgba(124,106,247,0.35);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 18px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.fm-entry:hover {
+  background: linear-gradient(135deg, rgba(124,106,247,0.25), rgba(124,106,247,0.1));
+  border-color: rgba(124,106,247,0.6);
+  transform: translateY(-1px);
+}
+.fm-entry-icon {
+  font-size: 26px;
+}
+.fm-entry-body {
+  flex: 1;
+}
+.fm-entry-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: white;
+}
+.fm-entry-desc {
+  font-size: 12px;
+  color: rgba(255,255,255,0.45);
+  margin-top: 2px;
+}
+.fm-entry-arrow {
+  color: rgba(124,106,247,0.7);
+  font-size: 14px;
+}
+
+/* 刷新按钮 */
+.refresh-btn {
+  background: rgba(124,106,247,0.2);
+  border: 1px solid rgba(124,106,247,0.4);
+  color: #a89cff;
+  padding: 4px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.15s;
+  margin-left: auto;
+}
+.refresh-btn:hover:not(:disabled) {
+  background: rgba(124,106,247,0.35);
+}
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .playlist-grid {

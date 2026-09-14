@@ -121,6 +121,8 @@ pub fn run() {
             // 酷狗 VIP 签到
             commands::kugou_vip::kugou_sign_vip,
             commands::kugou_vip::kugou_vip_status,
+            commands::kugou_vip::kugou_personal_fm,
+            commands::kugou_vip::kugou_watch_ad,
             // 歌词
             commands::lyric::get_lyric,
             // 下载

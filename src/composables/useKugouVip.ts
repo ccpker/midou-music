@@ -36,6 +36,9 @@ export const vipStatus = ref<VipStatus | null>(null)
 export const signLoading = ref(false)
 export const signError = ref('')
 export const signSuccess = ref('')
+export const adLoading = ref(false)
+export const adError = ref('')
+export const adResult = ref('')
 
 // 今日是否已签到（tvip 的 vip_begin_time 是今天）
 export const isSignedToday = computed(() => {
@@ -139,4 +142,31 @@ export function bindAutoSign() {
       }, 1000)
     }
   })
+}
+
+// ── 看广告领时长 ───────────────────────────────────
+
+export async function watchAd() {
+  adLoading.value = true
+  adError.value = ''
+  adResult.value = ''
+  try {
+    const raw = await invoke('kugou_watch_ad') as any
+    const hours = raw?.total_hours ?? 0
+    const done = raw?.done_count ?? 0
+    const limit = raw?.total_limit ?? 0
+    if (hours > 0) {
+      adResult.value = `已领取 ${hours} 小时 VIP（看广告 ${done}/${limit} 次）🎉`
+      await fetchVipStatus()
+    } else if (done > 0) {
+      adResult.value = `已看广告 ${done}/${limit} 次`
+    } else {
+      adError.value = '看广告未领取到时长，可能已达今日上限'
+    }
+  } catch (e) {
+    adError.value = String(e)
+  } finally {
+    adLoading.value = false
+  }
+  return { ok: !adError.value, result: adResult.value, error: adError.value }
 }

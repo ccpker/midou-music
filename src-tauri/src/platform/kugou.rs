@@ -11,7 +11,7 @@
 use md5;
 use reqwest::Client;
 use serde_json::Value;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::types::{KugouAuth, Song};
 
@@ -49,6 +49,13 @@ fn generate_mid() -> String {
 
 fn generate_uuid() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+/// 计算 signParamsKey: MD5(appid + 盐 + clientver + data)
+/// 概念版盐同 SALT，用于私人 FM / 登录等接口的 key 参数
+fn sign_params_key(data: &str) -> String {
+    let raw = format!("{APPID}{SALT}{CLIENTVER}{data}");
+    format!("{:x}", md5::compute(raw.as_bytes()))
 }
 
 /// 计算酷狗 Android 签名
@@ -684,4 +691,264 @@ pub async fn get_vip_status(client: &Client, auth: &KugouAuth) -> Result<serde_j
         .map_err(|e| format!("查询VIP JSON解析失败: {e}, body={:.300}", text))?;
 
     Ok(root)
+}
+
+// ── 私人 FM ─────────────────────────────────────
+//
+// 接口: POST /v2/personal_recommend（x-router=persnfm.service.kugou.com）
+// 机制（已实测打通）:
+//   - body 的 clienttime 是「毫秒」时间戳，key = signParamsKey(毫秒时间戳)
+//   - query 注入默认参数集（dfid/mid/uuid/appid/clientver/clienttime秒/token/userid）
+//   - 签名 = signatureAndroidParams(query参数, body)，同 compute_signature
+// 返回: data.song_list[]，字段与搜索一致（hash/album_id/songname/singerinfo/time_length）
+
+/// 私人 FM 推荐（个性化推荐流，返回一批 Song，可直接用 /v5/url 播放）
+pub async fn personal_fm(client: &Client, auth: &KugouAuth) -> Result<Vec<Song>, String> {
+    if !auth.logged_in || auth.token.is_empty() {
+        return Err("请先登录酷狗".to_string());
+    }
+
+    let clienttime = current_timestamp_secs();
+    let clienttime_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let mid = generate_mid();
+    let uuid = generate_uuid();
+    let clienttime_str = clienttime.to_string();
+    let userid_str = auth.userid.to_string();
+
+    // body（personal_fm.js dataMap，clienttime 用毫秒）
+    let body = serde_json::json!({
+        "appid": APPID,
+        "clienttime": clienttime_ms,
+        "mid": mid,
+        "action": "play",
+        "recommend_source_locked": 0,
+        "song_pool_id": 0,
+        "callerid": 0,
+        "m_type": 1,
+        "platform": "ios",
+        "area_code": 1,
+        "remain_songcnt": 0,
+        "clientver": CLIENTVER,
+        "is_overplay": 0,
+        "mode": "normal",
+        "fakem": "ca981cfc583a4c37f28d2d49000013c16a0a",
+        "key": sign_params_key(&clienttime_ms.to_string()),
+        "userid": auth.userid,
+        "kguid": auth.userid,
+        "token": auth.token,
+    });
+    let body_str = body.to_string();
+
+    // query 默认参数集
+    let mut params: Vec<(&str, &str)> = vec![
+        ("dfid", &auth.dfid),
+        ("mid", &mid),
+        ("uuid", &uuid),
+        ("appid", APPID),
+        ("clientver", CLIENTVER),
+        ("clienttime", &clienttime_str),
+        ("token", &auth.token),
+        ("userid", &userid_str),
+    ];
+    let signature = compute_signature(&params, &body_str);
+    params.push(("signature", &signature));
+
+    let url = format!("{}/v2/personal_recommend", GATEWAY);
+    let resp = client
+        .post(&url)
+        .query(&params)
+        .header("x-router", "persnfm.service.kugou.com")
+        .header("User-Agent", "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi")
+        .header("Content-Type", "application/json")
+        .body(body_str)
+        .send()
+        .await
+        .map_err(|e| format!("私人FM请求失败: {e}"))?;
+
+    let text = resp.text().await.map_err(|e| format!("私人FM响应失败: {e}"))?;
+    let root: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("私人FM JSON解析失败: {e}, body={:.300}", text))?;
+
+    let status = root.get("status").and_then(|v| v.as_i64()).unwrap_or(0);
+    if status != 1 {
+        let ec = root.get("error_code").and_then(|v| v.as_i64()).unwrap_or(0);
+        let msg = root.get("error_msg").and_then(|v| v.as_str()).unwrap_or("");
+        return Err(format!("私人FM失败 status={} error_code={} {}", status, ec, msg));
+    }
+
+    let songs = root
+        .get("data")
+        .and_then(|v| v.get("song_list"))
+        .and_then(|v| v.as_array());
+
+    Ok(songs.map_or(vec![], |items| {
+        items
+            .iter()
+            .filter_map(|item| {
+                let file_hash = item
+                    .get("hash")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let album_id = item
+                    .get("album_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if file_hash.is_empty() {
+                    return None;
+                }
+                let song_id = if album_id.is_empty() {
+                    format!("kugou:{}", file_hash)
+                } else {
+                    format!("kugou:{}|{}", file_hash, album_id)
+                };
+                let singer = item
+                    .get("singerinfo")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|s| s.get("name").and_then(|n| n.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("、")
+                    })
+                    .unwrap_or_default();
+                Some(Song {
+                    song_id,
+                    name: item
+                        .get("songname")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    singer,
+                    album: String::new(),
+                    duration: item
+                        .get("time_length")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u32,
+                    source: "kugou".to_string(),
+                    cover_url: None,
+                })
+            })
+            .collect()
+    }))
+}
+
+// ── 看广告领 VIP 时长 ───────────────────────────
+//
+// 接口: POST /youth/v1/ad/play_report（看广告领 N 小时 VIP）
+// 已实测: 每次 +3 小时，每天上限 8 次（total=8），限流错误码 30000「操作频繁」
+// 效果: 8 次 × 3h = 24h = 额外 1 天，与每日签到叠加。
+
+/// 单次看广告领时长
+async fn watch_ad_once(client: &Client, auth: &KugouAuth) -> Result<Value, String> {
+    let clienttime = current_timestamp_secs();
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let mid = generate_mid();
+    let uuid = generate_uuid();
+    let clienttime_str = clienttime.to_string();
+    let userid_str = auth.userid.to_string();
+
+    let body = serde_json::json!({
+        "ad_id": 12307537187_u64,
+        "play_end": now_ms,
+        "play_start": now_ms - 30000,
+    });
+    let body_str = body.to_string();
+
+    let mut params: Vec<(&str, &str)> = vec![
+        ("dfid", &auth.dfid),
+        ("mid", &mid),
+        ("uuid", &uuid),
+        ("appid", APPID),
+        ("clientver", CLIENTVER),
+        ("clienttime", &clienttime_str),
+        ("token", &auth.token),
+        ("userid", &userid_str),
+    ];
+    let signature = compute_signature(&params, &body_str);
+    params.push(("signature", &signature));
+
+    let url = format!("{}/youth/v1/ad/play_report", GATEWAY);
+    let resp = client
+        .post(&url)
+        .query(&params)
+        .header("User-Agent", "Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi")
+        .header("Content-Type", "application/json")
+        .body(body_str)
+        .send()
+        .await
+        .map_err(|e| format!("看广告请求失败: {e}"))?;
+
+    let text = resp.text().await.map_err(|e| format!("看广告响应失败: {e}"))?;
+    let root: Value = serde_json::from_str(&text)
+        .map_err(|e| format!("看广告JSON解析失败: {e}, body={:.300}", text))?;
+
+    Ok(root)
+}
+
+/// 循环看广告领时长（最多 8 次，间隔 4 秒，遇 30000 限流等待重试）
+/// 返回汇总 { total_hours, done_count, detail: 最后一次响应 }
+pub async fn watch_ad(client: &Client, auth: &KugouAuth) -> Result<serde_json::Value, String> {
+    if !auth.logged_in || auth.token.is_empty() {
+        return Err("请先登录酷狗".to_string());
+    }
+
+    let mut total_hours: i64 = 0;
+    let mut done_count: i64 = 0;
+    let mut total_limit: i64 = 8;
+    let mut last_detail = Value::Null;
+    let mut error_log: Vec<String> = vec![];
+
+    for _ in 0..8 {
+        match watch_ad_once(client, auth).await {
+            Ok(v) => {
+                let status = v.get("status").and_then(|x| x.as_i64()).unwrap_or(0);
+                if status == 1 {
+                    done_count += 1;
+                    if let Some(d) = v.get("data") {
+                        total_hours += d
+                            .get("award_vip_hour")
+                            .and_then(|x| x.as_i64())
+                            .unwrap_or(0);
+                        if let Some(t) = d.get("total").and_then(|x| x.as_i64()) {
+                            total_limit = t;
+                        }
+                        last_detail = d.clone();
+                    }
+                    // done 已达上限则提前结束
+                    if let Some(done) = v
+                        .get("data")
+                        .and_then(|d| d.get("done"))
+                        .and_then(|x| x.as_i64())
+                    {
+                        if done >= total_limit {
+                            break;
+                        }
+                    }
+                } else {
+                    let ec = v.get("error_code").and_then(|x| x.as_i64()).unwrap_or(0);
+                    let msg = v.get("error_msg").and_then(|x| x.as_str()).unwrap_or("");
+                    error_log.push(format!("code={} {}", ec, msg));
+                }
+            }
+            Err(e) => error_log.push(e),
+        }
+        // 限流保护：间隔 4 秒
+        tokio::time::sleep(Duration::from_secs(4)).await;
+    }
+
+    Ok(serde_json::json!({
+        "total_hours": total_hours,
+        "done_count": done_count,
+        "total_limit": total_limit,
+        "detail": last_detail,
+        "errors": error_log,
+    }))
 }

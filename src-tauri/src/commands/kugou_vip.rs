@@ -41,3 +41,35 @@ pub async fn kugou_vip_status(
 
     crate::platform::kugou::get_vip_status(&state.client, &auth).await
 }
+
+/// 私人 FM 推荐（个性化推荐流）
+///
+/// 返回 Vec<Song>，可直接用 play_url 播放
+#[tauri::command]
+pub async fn kugou_personal_fm(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<Vec<crate::types::Song>, String> {
+    let auth = state
+        .kugou_auth
+        .lock()
+        .map_err(|e| format!("kugou_auth锁失败: {}", e))?
+        .clone();
+
+    crate::platform::kugou::personal_fm(&state.client, &auth).await
+}
+
+/// 看广告领 VIP 时长（循环最多 8 次，间隔 4 秒）
+///
+/// 返回 { total_hours, done_count, total_limit, detail, errors }
+#[tauri::command]
+pub async fn kugou_watch_ad(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<serde_json::Value, String> {
+    let auth = state
+        .kugou_auth
+        .lock()
+        .map_err(|e| format!("kugou_auth锁失败: {}", e))?
+        .clone();
+
+    crate::platform::kugou::watch_ad(&state.client, &auth).await
+}
