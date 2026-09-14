@@ -2,15 +2,22 @@
  * Composable: useKugouVip
  * 路径: src/composables/useKugouVip.ts
  * ────────────────────────────────────────────────────────────
- * 功能: 酷狗签到领 VIP + VIP 状态查询
+ * 功能: 酷狗签到领 VIP + VIP 状态查询 + 自动签到
  *
  * 机制（moekoe 同款）:
  *   扫码 web token → 签到 receive_vip_listen_song → 账号获得
  *   概念版 tvip（1 天）→ 就能播 VIP 完整版
+ *
+ * 自动签到:
+ *   - 应用启动时已登录 → 静默签
+ *   - 扫码登录成功 → 静默签
+ *   - 签到接口幂等，error_code=131001 表示「今天已签过」，静默忽略
  */
 
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { isLoggedIn } from './useKugouLogin'
 
 // ── 状态 ────────────────────────────────────────────
 
@@ -30,13 +37,26 @@ export const signLoading = ref(false)
 export const signError = ref('')
 export const signSuccess = ref('')
 
+// 今日是否已签到（tvip 的 vip_begin_time 是今天）
+export const isSignedToday = computed(() => {
+  const t = vipStatus.value?.tvip
+  if (!t?.vip_begin_time) return false
+  const begin = new Date(t.vip_begin_time.replace(' ', 'T'))
+  const now = new Date()
+  return (
+    begin.getFullYear() === now.getFullYear() &&
+    begin.getMonth() === now.getMonth() &&
+    begin.getDate() === now.getDate()
+  )
+})
+
 // ── 查询 VIP 状态 ─────────────────────────────────────
 
 export async function fetchVipStatus() {
   try {
     const raw = await invoke('kugou_vip_status') as any
     const data = raw?.data || {}
-    // 从 busi_vip 数组里找 tvip 权益
+    // 从 busi_vip 数组里找 tvip 权益（is_vip=1 且在有效期内）
     let tvip: VipStatus['tvip'] = null
     const busi = Array.isArray(data.busi_vip) ? data.busi_vip : []
     for (const b of busi) {
@@ -72,10 +92,10 @@ export async function signVip() {
     const code = raw?.error_code
     if (status === 1 && (code === 0 || code === undefined)) {
       signSuccess.value = '签到成功，已领取 1 天 VIP 🎉'
-      // 刷新 VIP 状态
       await fetchVipStatus()
     } else if (code === 131001) {
-      signError.value = '今天已经签到过了'
+      signSuccess.value = '今天已经签到过了'
+      await fetchVipStatus()
     } else {
       signError.value = raw?.error_msg || `签到失败 (code=${code})`
     }
@@ -85,4 +105,38 @@ export async function signVip() {
     signLoading.value = false
   }
   return { ok: !signError.value, error: signError.value, success: signSuccess.value }
+}
+
+// ── 自动签到（静默，不打扰用户）─────────────────────────
+
+export async function autoSignVip() {
+  // 未登录或已签今日，直接跳过
+  if (!isLoggedIn.value) return
+  if (isSignedToday.value) return
+  try {
+    const raw = await invoke('kugou_sign_vip') as any
+    // 成功或已签（131001）都静默刷新状态；失败也静默（下次再试）
+    if (raw?.status === 1 || raw?.error_code === 131001) {
+      await fetchVipStatus()
+    }
+  } catch {
+    /* 自动签到失败静默，不打扰 */
+  }
+}
+
+// 监听登录态变化：登录成功后自动签到
+let _autoSignBound = false
+export function bindAutoSign() {
+  if (_autoSignBound) return
+  _autoSignBound = true
+  listen('kugou_auth_updated', (event) => {
+    const p = event.payload as { logged_in: boolean }
+    if (p?.logged_in) {
+      // 登录成功后延时静默签到
+      setTimeout(async () => {
+        await fetchVipStatus()
+        await autoSignVip()
+      }, 1000)
+    }
+  })
 }

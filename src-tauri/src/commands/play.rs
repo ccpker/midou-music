@@ -26,7 +26,11 @@ pub async fn play_url(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<PlayUrlResult, String> {
     crate::debug_log::info("play_cmd", &format!("song_id={song_id}"));
-    let (url, source) = if song_id.starts_with("au") || song_id.starts_with("bv") {
+    let (url, source) = if song_id.starts_with("local:") {
+        // 本地文件：返回绝对路径，前端用 convertFileSrc 转 asset 协议
+        let path = &song_id["local:".len()..];
+        (path.to_string(), "local".to_string())
+    } else if song_id.starts_with("au") || song_id.starts_with("bv") {
         // B站音频
         let v = crate::platform::bili::play_url(&state.client, &song_id, "high").await?;
         let u = v.get("url").and_then(|s| s.as_str()).unwrap_or("");
@@ -38,7 +42,7 @@ pub async fn play_url(
             .lock()
             .map_err(|e| format!("kugou_auth锁失败: {}", e))?
             .clone();
-        let u = crate::platform::kugou::play_url(&state.client, &song_id, &auth).await?;
+        let u = crate::platform::kugou::play_url(&state.client, &song_id, &auth, "128").await?;
         (u, "kugou".to_string())
     } else {
         // 默认为酷我

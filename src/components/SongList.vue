@@ -4,9 +4,11 @@
  * 功能: 歌曲搜索结果列表
  * props: { songs: Song[] }
  * emits: ["play"] — 携带 song: Song
+ *         ["download"] — 携带 song: Song
  * 依赖: 无
  */
 import { computed } from 'vue';
+import { downloading, downloadDone, downloadError } from '../composables/useDownload';
 
 interface Song {
   song_id: string;
@@ -23,6 +25,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'play', song: Song): void;
+  (e: 'download', song: Song): void;
 }>();
 
 function onClick(song: Song, event: MouseEvent) {
@@ -32,8 +35,12 @@ function onClick(song: Song, event: MouseEvent) {
   setTimeout(() => {
     target.style.background = '';
   }, 200);
-  
+
   emit('play', song);
+}
+
+function onDownload(song: Song) {
+  emit('download', song);
 }
 
 function fmtDur(sec?: number): string {
@@ -44,9 +51,17 @@ function fmtDur(sec?: number): string {
 }
 
 const sourceBadge = (s: string) => {
-  const map: Record<string, string> = { kuwo: '♬', kugou: '🎵', bilibili: '📺', qq: '🐧' };
+  const map: Record<string, string> = { kuwo: '♬', kugou: '🎵', bilibili: '📺', qq: '🐧', local: '📂' };
   return map[s] || s;
 };
+
+function downloadState(song: Song): 'idle' | 'downloading' | 'done' | 'error' {
+  const sid = song.song_id;
+  if (downloading.value[sid]) return 'downloading';
+  if (downloadError.value[sid]) return 'error';
+  if (downloadDone.value[sid]) return 'done';
+  return 'idle';
+}
 </script>
 
 <template>
@@ -56,7 +71,7 @@ const sourceBadge = (s: string) => {
       :key="song.song_id"
       class="song-item"
     >
-      <button 
+      <button
         class="play-btn"
         @click="onClick(song, $event)"
         :title="'播放: ' + song.name"
@@ -71,6 +86,19 @@ const sourceBadge = (s: string) => {
           <span class="song-dur">{{ fmtDur(song.duration) }}</span>
         </span>
       </div>
+      <!-- 下载按钮 -->
+      <button
+        class="dl-btn"
+        :class="downloadState(song)"
+        :disabled="downloadState(song) === 'downloading'"
+        @click.stop="onDownload(song)"
+        :title="downloadState(song) === 'done' ? '已下载' : downloadState(song) === 'error' ? '下载失败，点击重试' : '下载'"
+      >
+        <template v-if="downloadState(song) === 'downloading'">⏳</template>
+        <template v-else-if="downloadState(song) === 'done'">✅</template>
+        <template v-else-if="downloadState(song) === 'error'">⚠️</template>
+        <template v-else>⬇</template>
+      </button>
     </div>
     <p v-if="songs.length === 0" class="empty-hint">暂无结果</p>
   </div>
@@ -91,6 +119,8 @@ const sourceBadge = (s: string) => {
   background: rgba(255,255,255,0.02);
   border: 1px solid transparent;
   margin: 2px 0;
+  display: flex;
+  align-items: center;
 }
 
 .song-item:hover {
@@ -128,15 +158,12 @@ const sourceBadge = (s: string) => {
   transform: scale(0.95);
 }
 
-.song-item {
-  display: flex;
-  align-items: center;
-}
-
 .song-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .song-name {
@@ -155,6 +182,39 @@ const sourceBadge = (s: string) => {
 
 .song-dur {
   margin-left: 8px;
+}
+
+.dl-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.04);
+  color: rgba(255,255,255,0.7);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.dl-btn:hover:not(:disabled) {
+  background: rgba(124,106,247,0.25);
+  border-color: rgba(124,106,247,0.5);
+  color: white;
+}
+.dl-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dl-btn.done {
+  color: #2ecc71;
+  border-color: rgba(46,204,113,0.4);
+}
+.dl-btn.error {
+  color: #ff6b6b;
+  border-color: rgba(255,107,107,0.4);
 }
 
 .empty-hint {

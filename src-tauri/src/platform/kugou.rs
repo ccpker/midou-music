@@ -213,6 +213,7 @@ pub async fn play_url(
     client: &Client,
     encoded_id: &str,
     auth: &KugouAuth,
+    quality: &str,
 ) -> Result<String, String> {
     // 解析 song_id: "kugou:{FileHash}|{AlbumID}" 或 "kugou:{FileHash}"
     let id = encoded_id.strip_prefix("kugou:").unwrap_or(encoded_id);
@@ -245,7 +246,7 @@ pub async fn play_url(
         ("ssa_flag", "is_fromtrack".to_string()),
         ("version", "11430".to_string()),
         ("page_id", "967177915".to_string()), // lite
-        ("quality", "128".to_string()),
+        ("quality", quality.to_string()),
         ("album_audio_id", "0".to_string()),
         ("behavior", "play".to_string()),
         ("pid", "411".to_string()), // lite

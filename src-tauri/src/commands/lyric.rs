@@ -5,6 +5,7 @@
 // 功能: 获取歌词（LRC 文本）
 // ════════════════════════════════════════════════
 
+use std::path::Path;
 use std::sync::Arc;
 use crate::types::AppState;
 
@@ -27,6 +28,12 @@ pub async fn get_lyric(
         &format!("get_lyric: name={name}, singer={singer}, source={source}, song_id={song_id}"),
     );
 
+    // 本地歌曲：直接读同目录 .lrc（不走网络）
+    if source == "local" || song_id.starts_with("local:") {
+        let path = song_id.strip_prefix("local:").unwrap_or(&song_id);
+        return read_local_lrc(path);
+    }
+
     match crate::platform::lyric::fetch_lyric(
         &state.client,
         &name,
@@ -43,5 +50,17 @@ pub async fn get_lyric(
             crate::debug_log::info("lyric", &format!("歌词获取失败(返回空): {e}"));
             Ok(String::new())
         }
+    }
+}
+
+/// 读取本地音频文件同目录的同名 .lrc 歌词
+/// 找不到返回空字符串（不抛错，前端降级显示）
+fn read_local_lrc(path: &str) -> Result<String, String> {
+    let p = Path::new(path);
+    let lrc_path = p.with_extension("lrc");
+    if lrc_path.exists() {
+        std::fs::read_to_string(&lrc_path).map_err(|e| format!("读本地歌词失败: {e}"))
+    } else {
+        Ok(String::new())
     }
 }

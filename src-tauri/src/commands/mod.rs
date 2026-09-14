@@ -6,9 +6,11 @@
 // 原则: 所有 #[tauri::command] 必须注册到这里
 // ════════════════════════════════════════════════
 
+pub mod download;
 pub mod kugou_login;
 pub mod kugou_playlist;
 pub mod kugou_vip;
+pub mod library;
 pub mod lyric;
 pub mod play;
 pub mod search;

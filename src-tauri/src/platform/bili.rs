@@ -5,11 +5,11 @@
 // 功能: B站音频搜索 + 播放
 // 战法: 历史记录 "B站音频战法"（spi → search → view → playurl）
 //
-// 音频类型 A（音乐区）:
-//   → search → song/infonet → audio_url
-//
-// 音频类型 B（视频区 / 音频版）:
-//   → search → view → playurl(fnval=4048)
+// 【2026-09-12 修复】
+//   search_type=3（纯音频）已被 B站下线，返回 -1200 "被降级过滤"。
+//   改用 search_type=video（视频搜索），统一走「视频区音频版」链路：
+//   → search(video) → pagelist(cid) → playurl(fnval=4048, DASH audio)
+//   音乐区纯音频（au 前缀 / music-service-c 接口）已失效，仅保留 bv 链路。
 //
 // 零登录，仅需 buvid3/buvid4 访客 Cookie
 // 歌词: B站不带歌词，依赖 LRCLIB（上层处理）
@@ -27,8 +27,6 @@ use crate::types::Song;
 const BILI_SEARCH: &str = "https://api.bilibili.com/x/web-interface/search/type";
 const BILI_VIEW: &str = "https://api.bilibili.com/x/player/pagelist";
 const BILI_PLAYURL: &str = "https://api.bilibili.com/x/player/v2";
-const BILI_SONG_INFO: &str = "https://www.bilibili.com/music-service-c/song/infonet";
-const BILI_AUDIO_URL: &str = "https://www.bilibili.com/music-service-c/audioUrl";
 
 const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
 
@@ -44,11 +42,10 @@ fn guest_cookies() -> [(&'static str, &'static str); 2] {
 
 /// B站搜索
 ///
-/// search_type = 3 → 音频（不含视频）
-/// 仅返回 UP主上传的纯音频（music_area）
+/// search_type = video → 视频区（音频版，DASH audio 流）
+/// （原 search_type=3 纯音频已下线，2026-09-12）
 ///
 /// song_id 格式:
-///   - 音乐区:  "au{MUSIC_ID}"   （纯音频，有封面）
 ///   - 视频区:  "bv{BVID}"       （音频版视频，封面取自视频帧）
 pub async fn search(
     client: &Client,
@@ -59,7 +56,7 @@ pub async fn search(
     let resp = client
         .get(BILI_SEARCH)
         .query(&[
-            ("search_type", "3"),    // 3 = 音频（不含视频）
+            ("search_type", "video"),    // video = 视频区（音频版）
             ("keyword", keyword),
             ("page", "1"),
             ("pagesize", &page_size.to_string()),
@@ -91,14 +88,9 @@ pub async fn search(
                     // 标题格式: "<em>关键词</em> 歌曲名 - 歌手名"，去掉 em 标签
                     let title = title.replace("<em>", "").replace("</em>", "");
 
-                    // 取 arcurl 中的 av 号或音频 ID
+                    // 视频区：取 bvid
                     let bvid = item.get("bvid").and_then(|v| v.as_str());
-                    let music_id = item.get("music_id").and_then(|v| v.as_str());
-
-                    // song_id 优先用 music_id（纯音频），否则用 bvid（音频版视频）
-                    let song_id = music_id
-                        .map(|id| format!("au{}", id))
-                        .or_else(|| bvid.map(|bv| format!("bv{}", bv)))?;
+                    let song_id = bvid.map(|bv| format!("bv{}", bv))?;
 
                     // 时长: 取不到则估算
                     let duration = item
@@ -107,6 +99,12 @@ pub async fn search(
                         .and_then(|s| parse_duration(s))
                         .unwrap_or(0);
 
+                    // 封面: 视频区无 cover 字段时用 pic
+                    let cover = item
+                        .get("cover")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("pic").and_then(|v| v.as_str()));
+
                     Some(Song {
                         song_id,
                         name: extract_title(&title),
@@ -114,7 +112,7 @@ pub async fn search(
                         album: item.get("author").and_then(|v| v.as_str()).unwrap_or("B站音频").to_string(),
                         duration,
                         source: "bili".to_string(),
-                        cover_url: item.get("cover").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        cover_url: cover.map(|s| s.to_string()),
                     })
                 })
                 .collect()
@@ -128,8 +126,8 @@ pub async fn search(
 /// B站获取音频流地址
 ///
 /// 路由:
-///   au{MUSIC_ID}  → 音乐区纯音频（music-service-c/audioUrl）
 ///   bv{BVID}      → 视频区音频版（DASH audio，取 audio 流非 video）
+///   （au 音乐区纯音频接口已下线，2026-09-12）
 ///
 /// 返回: { "url": "...", "quality": "..." }
 pub async fn play_url(
@@ -138,69 +136,8 @@ pub async fn play_url(
     _quality: &str,
 ) -> Result<Value, String> {
     if song_id.starts_with("au") {
-        // ── 音乐区纯音频 ───────────────────────────
-        let music_id = &song_id[2..];
-
-        // 获取歌曲详情（含真实 musicId + cover）
-        let info_resp = client
-            .get(BILI_SONG_INFO)
-            .query(&[
-                ("musicId", music_id),
-                ("privilege", "2"),
-                ("upgrade", "1"),
-            ])
-            .header("User-Agent", UA)
-            .header("Referer", "https://www.bilibili.com/")
-            .send()
-            .await
-            .map_err(|e| format!("B站歌曲信息请求失败: {e}"))?;
-
-        let info_text = info_resp.text().await.map_err(|e| format!("B站歌曲信息响应失败: {e}"))?;
-        let info: Value = serde_json::from_str(&info_text)
-            .map_err(|e| format!("B站歌曲信息 JSON 解析失败: {e}"))?;
-
-        let real_id = info
-            .get("data")
-            .and_then(|d| d.get("musicId"))
-            .and_then(|v| v.as_str())
-            .ok_or("B站歌曲信息 missing musicId")?;
-
-        // 获取音频 URL
-        let url_resp = client
-            .get(BILI_AUDIO_URL)
-            .query(&[
-                ("musicId", real_id),
-                ("privilege", "2"),
-                ("upgrade", "1"),
-            ])
-            .header("User-Agent", UA)
-            .header("Referer", "https://www.bilibili.com/")
-            .send()
-            .await
-            .map_err(|e| format!("B站音频URL请求失败: {e}"))?;
-
-        let url_text = url_resp.text().await.map_err(|e| format!("B站音频URL响应失败: {e}"))?;
-        let url_data: Value = serde_json::from_str(&url_text)
-            .map_err(|e| format!("B站音频URL JSON 解析失败: {e}"))?;
-
-        let audio_url = url_data
-            .get("data")
-            .and_then(|d| d.get("cdns"))
-            .and_then(|c| c.as_array())
-            .and_then(|arr| arr.get(0))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                format!(
-                    "B站音频URL为空 cdns=NULL: {:.100}",
-                    url_text
-                )
-            })?;
-
-        Ok(serde_json::json!({
-            "url": audio_url,
-            "quality": "high",
-        }))
-
+        // ── 音乐区纯音频（已下线，返回明确错误） ─────
+        Err("B站音乐区纯音频接口已下线，请使用视频区音频版（bv 前缀）".to_string())
     } else if song_id.starts_with("bv") {
         // ── 视频区音频版 ────────────────────────────
         let bvid = &song_id[2..];

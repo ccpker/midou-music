@@ -24,15 +24,38 @@ fn debug_log_write(level: &str, tag: &str, msg: &str) {
 }
 
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use types::AppState;
+
+/// 判断路径是否为支持的音频文件（用于双击文件识别）
+fn is_audio_path(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    ["mp3", "flac", "m4a", "wav", "aac", "ogg"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 首次启动时解析命令行参数，拿到双击的文件路径
+    let first_open_file: Option<String> = std::env::args()
+        .skip(1)
+        .find(|a| is_audio_path(a));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
+        // ── 单实例 + 文件关联：双击文件时把路径传给已开着的窗口 ──
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // argv 是启动参数，双击音频文件时包含文件路径
+            if let Some(path) = argv.iter().find(|a| is_audio_path(a)) {
+                crate::debug_log::info("file_open", &format!("双击打开文件: {path}"));
+                // 通过事件通知前端播放
+                let _ = app.emit("file_open", path.clone());
+            }
+        }))
         // ── 初始化 ──────────────────────────────
-        .setup(|app| {
+        .setup(move |app| {
             // 数据目录
             let app_dir = dirs::data_local_dir()
                 .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -60,6 +83,17 @@ pub fn run() {
                 db: std::sync::Mutex::new(db),
                 kugou_auth: std::sync::Mutex::new(kugou_auth),
             }));
+
+            // 首次启动就带了音频文件参数（双击启动）→ 等主窗口就绪后通知前端
+            if let Some(path) = first_open_file {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // 等待主窗口 ready（前端监听事件注册完成）
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    crate::debug_log::info("file_open", &format!("首次启动打开文件: {path}"));
+                    let _ = handle.emit("file_open", path);
+                });
+            }
 
             Ok(())
         })
@@ -89,6 +123,11 @@ pub fn run() {
             commands::kugou_vip::kugou_vip_status,
             // 歌词
             commands::lyric::get_lyric,
+            // 下载
+            commands::download::download_song,
+            commands::download::get_qualities,
+            // 本地音乐库
+            commands::library::scan_library,
             // 调试日志（前端调用）
             debug_log_write,
         ])

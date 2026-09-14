@@ -18,6 +18,7 @@
 
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 // ── 类型 ─────────────────────────────────────────
@@ -63,6 +64,12 @@ export async function playSong(song: Song) {
     });
     console.warn('[playSong] play_url 返回:', result);
 
+    // 本地文件：play_url 返回的是绝对路径，需转成 asset 协议才能给 <audio> 用
+    let playUrl = result.url;
+    if (result.source === 'local' || song.song_id.startsWith('local:')) {
+      playUrl = convertFileSrc(result.url);
+    }
+
     currentSong.value = song;
 
     // 2. 打开播放条（仅首次）
@@ -94,7 +101,7 @@ export async function playSong(song: Song) {
       await invoke('emit_play_state', {
         state: {
           song,
-          url: result.url,
+          url: playUrl,
           is_playing: true,
           position: 0,
           duration: song.duration || 0,
